@@ -351,6 +351,11 @@
         <summary>Open at Login menu item</summary>
         <description>Add an "Open at Login" switch to the app icon menu; it creates or removes ~/.config/autostart/APP.desktop.</description>
     </key>
+    <key type="b" name="keyboard-focus">
+        <default>false</default>
+        <summary>Keyboard focus into the dock</summary>
+        <description>List the dock as "Dock" in Ctrl+Alt+Tab; selecting it reveals the dock and highlights the focused icon (arrows move, Enter opens).</description>
+    </key>
     <key type="b" name="apps-icon">
         <default>true</default>
         <summary>Apps icon</summary>

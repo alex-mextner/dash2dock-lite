@@ -184,6 +184,11 @@ export let AutoHide = class {
       return false;
     }
 
+    // keyboard-focus: a dock holding key focus stays up regardless of pointer
+    if (this.dock._keyFocusIcon) {
+      return false;
+    }
+
     // console.log("checking pointer location...");
 
     // Only a shown dock is kept up by the pointer (_isWithinDash is false while

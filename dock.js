@@ -11,6 +11,7 @@ import Graphene from 'gi://Graphene';
 import St from 'gi://St';
 
 import { Dash } from 'resource:///org/gnome/shell/ui/dash.js';
+import { gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import { TintEffect } from './effects/tint_effect.js';
 import { MonochromeEffect } from './effects/monochrome_effect.js';
@@ -205,6 +206,7 @@ export let Dock = GObject.registerClass(
         this._hoveredIcon = null;
         this._lastHoveredIcon = null;
         this._nearestIcon = null;
+        this._keyFocusIcon = null;
         this._dragged = null;
         this._dragging = false;
         this._trashIcon = null;
@@ -259,6 +261,8 @@ export let Dock = GObject.registerClass(
     }
 
     undock() {
+      global.stage.disconnectObject(this);
+      this._keyFocusIcon = null;
       this._destroyList();
       this._endAnimation();
       this._removeIconEffect();
@@ -344,6 +348,76 @@ export let Dock = GObject.registerClass(
       this.autohider._debounceCheckHide();
       return Clutter.EVENT_PROPAGATE;
     }
+
+    // keyboard-focus: Ctrl+Alt+Tab lists the dock as "Dock" (macOS Ctrl+F3).
+    // The Shell Dash already registered itself as "Dash" in its constructor;
+    // re-register with a callback that reveals an autohidden dock first.
+    _updateKeyboardFocus() {
+      let dash = this.dash;
+      if (!dash) return;
+      let manager = Main.ctrlAltTabManager;
+      let current = manager._items?.find((item) => item.root === dash);
+      if (current && !this._shellFocusGroup) {
+        this._shellFocusGroup = {
+          name: current.name,
+          iconName: current.iconName,
+          sortGroup: current.sortGroup,
+        };
+      }
+      manager.removeGroup(dash);
+      global.stage.disconnectObject(this);
+      this._setKeyFocusIcon(null);
+
+      if (!this.extension.keyboard_focus) {
+        let shell = this._shellFocusGroup;
+        if (shell) {
+          manager.addGroup(dash, shell.name, shell.iconName, {
+            sortGroup: shell.sortGroup,
+          });
+        }
+        return;
+      }
+
+      manager.addGroup(dash, _('Dock'), 'user-bookmarks-symbolic', {
+        focusCallback: (timestamp) => {
+          this.autohider?.show();
+          if (!Main.overview.visible) {
+            global.display.unset_input_focus(timestamp);
+          }
+          dash.navigate_focus(null, St.DirectionType.TAB_FORWARD, false);
+        },
+      });
+      global.stage.connectObject(
+        'notify::key-focus',
+        () => this._onKeyFocusChanged(),
+        this
+      );
+    }
+
+    // The focused Shell AppIcon is invisible (the renderer draws the dock),
+    // so show focus the way the pointer would: magnify the focused item.
+    _onKeyFocusChanged() {
+      let focus = global.stage.key_focus;
+      let icon = null;
+      if (focus && this.dash?.contains(focus)) {
+        icon =
+          (this._icons ?? []).find((c) => c === focus || c.contains(focus)) ??
+          null;
+      }
+      this._setKeyFocusIcon(icon);
+    }
+
+    _setKeyFocusIcon(icon) {
+      if (icon === (this._keyFocusIcon ?? null)) return;
+      this._keyFocusIcon = icon;
+      if (icon) {
+        this.autohider?.show();
+      } else {
+        this.autohider?._debounceCheckHide();
+      }
+      this._beginAnimation();
+    }
+
     _onMonitorsChanged() {
       this._needsLayout = true;
       this.relayout();
@@ -472,6 +546,7 @@ export let Dock = GObject.registerClass(
       }
 
       this.dash = dash;
+      this._updateKeyboardFocus();
       let dashBg = Compat.getDashBackground(this.dash);
       if (dashBg) {
         dashBg.visible = false;
@@ -1579,6 +1654,15 @@ export let Dock = GObject.registerClass(
 
         this.simulated_pointer = p;
         this._preview--;
+      }
+      // keyboard focus (keyboard-focus setting) drives the magnification
+      // like a pointer; read each frame because the dock may still be
+      // sliding in. Only while an icon has key focus.
+      else if (this._keyFocusIcon) {
+        let target = this._keyFocusIcon._icon ?? this._keyFocusIcon;
+        let [x, y] = target.get_transformed_position();
+        let [w, h] = target.get_transformed_size();
+        this.simulated_pointer = [x + w / 2, y + h / 2];
       }
 
       //! add layout here instead of at the

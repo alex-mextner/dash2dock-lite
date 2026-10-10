@@ -72,6 +72,18 @@
         </child>
         <child>
           <object class="AdwActionRow">
+            <property name="title" translatable="yes">Keyboard Focus (Ctrl+Alt+Tab)</property>
+            <property name="subtitle" translatable="yes">Ctrl+Alt+Tab lists the dock as "Dock": it is revealed and the focused icon is highlighted; arrows move, Enter opens.</property>
+            <property name="activatable-widget">keyboard-focus</property>
+            <child>
+              <object class="GtkSwitch" id="keyboard-focus">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
             <property name="title" translatable="yes">Apps Icon</property>
             <property name="subtitle" translatable="yes">Show the Overview Apps icon.</property>
             <property name="activatable-widget">apps-icon</property>

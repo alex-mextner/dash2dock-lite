@@ -66,6 +66,7 @@ const ACTION_ORDER = [
   'mounts',
   'recents_debounce',
   'recent_apps',
+  'keyboard_focus',
   'animation_fps',
   'autohide',
   'multi_monitor',
@@ -111,6 +112,7 @@ const REACTIONS = Object.freeze({
   'calendar-icon': ['layout', 'animate_refresh'],
   'clock-icon': ['layout', 'animate_refresh'],
   'favorites-only': ['layout', 'animate_refresh'],
+  'keyboard-focus': ['keyboard_focus'],
   'recent-apps-count': ['recent_apps', 'layout', 'animate_refresh'],
   'downloads-path': ['folder_stacks_setup', 'layout', 'animate_refresh'],
   'folder-stacks': ['folder_stacks_setup', 'layout', 'animate_refresh'],
@@ -723,6 +725,9 @@ export default class Dash2DockLiteExt extends Extension {
       },
       recent_apps: () => {
         this.docks?.forEach((dock) => dock.dash?._queueRedisplay());
+      },
+      keyboard_focus: () => {
+        this.docks?.forEach((dock) => dock._updateKeyboardFocus());
       },
       animation_fps: () => this._updateAnimationFPS(),
       autohide: () => this._updateAutohide(),

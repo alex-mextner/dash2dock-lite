@@ -178,6 +178,10 @@ export const SettingsKeys = (patch) => {
       default_value: false,
       widget_type: 'switch',
     },
+    'keyboard-focus': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'apps-icon': {
       default_value: true,
       widget_type: 'switch',
