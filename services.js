@@ -517,6 +517,8 @@ export const Services = class {
           Gio.FILE_ATTRIBUTE_STANDARD_NAME,
           Gio.FILE_ATTRIBUTE_STANDARD_ICON,
           Gio.FILE_ATTRIBUTE_TIME_MODIFIED,
+          Gio.FILE_ATTRIBUTE_STANDARD_SIZE,
+          Gio.FILE_ATTRIBUTE_STANDARD_IS_HIDDEN,
         ].join(','),
         Gio.FileQueryInfoFlags.NONE,
         this._cancellable ?? null
@@ -526,6 +528,10 @@ export const Services = class {
       while (
         (fileInfo = enumerator.next_file(this._cancellable ?? null)) !== null
       ) {
+        // hidden files stay out of the stack, as in Finder
+        if (fileInfo.get_is_hidden()) {
+          continue;
+        }
         let fileName = fileInfo.get_name();
         let fileModified = fileInfo.get_modification_time();
 

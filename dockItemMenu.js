@@ -11,6 +11,7 @@ import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
+import GdkPixbuf from 'gi://GdkPixbuf';
 import Graphene from 'gi://Graphene';
 const Point = Graphene.Point;
 
@@ -18,6 +19,36 @@ import { DockPosition } from './dock.js';
 import { Vector } from './vector.js';
 
 const ANIM_POSITION_PER_SEC = 450 / 1000;
+
+// largest images decoded directly when no thumbnail exists yet
+const MAX_PREVIEW_BYTES = 16 * 1024 * 1024;
+
+// The freedesktop thumbnail of an image file, or the image itself if small
+// enough; null for anything that is not an image.
+function previewFile(item) {
+  if (!item.path || !item.type?.startsWith('image/')) {
+    return null;
+  }
+  let file = Gio.File.new_for_path(item.path);
+  let md5 = GLib.compute_checksum_for_string(
+    GLib.ChecksumType.MD5,
+    file.get_uri(),
+    -1
+  );
+  for (let size of ['large', 'normal']) {
+    let thumb = GLib.build_filenamev([
+      GLib.get_user_cache_dir(),
+      'thumbnails',
+      size,
+      `${md5}.png`,
+    ]);
+    if (GLib.file_test(thumb, GLib.FileTest.EXISTS)) {
+      return Gio.File.new_for_path(thumb);
+    }
+  }
+  let bytes = item.fileInfo?.get_size?.() ?? 0;
+  return bytes > 0 && bytes <= MAX_PREVIEW_BYTES ? file : null;
+}
 
 export const DockItemList = GObject.registerClass(
   {},
@@ -163,11 +194,29 @@ export const DockItemList = GObject.registerClass(
         w._icon = icon;
         w._label = label;
         w.createActualIcon = () => {
-          let _icon = new St.Icon({
-            name: 'icon',
-            icon_name: l.icon,
-            icon_size: icon_size,
-          });
+          // images show their picture, like the Finder stack fan, decoded
+          // scaled down by the texture cache. Bound only the longer side
+          // (bounding both stretches it) and center it in the icon square.
+          let preview = previewFile(l);
+          let _icon;
+          if (preview) {
+            let [, pw, ph] = GdkPixbuf.Pixbuf.get_file_info(preview.get_path());
+            let landscape = pw >= ph;
+            _icon = St.TextureCache.get_default().load_file_async(
+              preview,
+              landscape ? icon_size : -1,
+              landscape ? -1 : icon_size,
+              1,
+              dock._monitor.geometry_scale
+            );
+            w._icon.layout_manager = new Clutter.BinLayout();
+          } else {
+            _icon = new St.Icon({
+              name: 'icon',
+              icon_name: l.icon,
+              icon_size: icon_size,
+            });
+          }
           w._icon.add_child(_icon);
         };
         label.opacity = 0;
