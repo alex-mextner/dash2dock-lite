@@ -221,6 +221,11 @@
         <summary>Downloads path</summary>
         <description>Path to monitor</description>
     </key>
+    <key type="s" name="folder-stacks">
+        <default>"[]"</default>
+        <summary>Folder stacks</summary>
+        <description>JSON array of extra folders shown as stacks next to Downloads: "path" or {"path", "title", "icon"}</description>
+    </key>
     <key type="i" name="max-recent-items">
         <default>0</default>
         <summary>Maximum recent items</summary>

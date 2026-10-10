@@ -130,6 +130,22 @@
           </object>
         </child>
         <child>
+          <object class="AdwExpanderRow" id="folder-stacks-row">
+            <property name="title" translatable="yes">Folder Stacks</property>
+            <property name="subtitle" translatable="yes">More folders shown as stacks next to Downloads, newest files first.</property>
+            <child type="suffix">
+              <object class="GtkButton" id="folder-stacks-add">
+                <property name="valign">center</property>
+                <property name="icon-name">list-add-symbolic</property>
+                <property name="tooltip-text" translatable="yes">Add folder</property>
+                <style>
+                  <class name="flat"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
           <object class="AdwActionRow">
             <property name="visible">false</property>
             <property name="title" translatable="yes">Recent Files</property>

@@ -20,13 +20,7 @@ import { DockItemList } from './dockItemMenu.js';
 import { AutoHide } from './autohide.js';
 import { Animator } from './animator.js';
 import { live } from './probe.js';
-import {
-  get_distance_sqr,
-  get_distance,
-  isInRect,
-  isOverlapRect,
-  getDownloadsDir,
-} from './utils.js';
+import { get_distance_sqr, get_distance, isInRect, isOverlapRect } from './utils.js';
 
 const Point = Graphene.Point;
 
@@ -179,7 +173,7 @@ export let Dock = GObject.registerClass(
 
     destroyDash() {
       if (this.dash) {
-        // the list may point at a downloads item that goes with the dash
+        // the list may point at a folder stack item that goes with the dash
         this._destroyList();
 
         // every item, also those _findIcons() skips (hidden non-favorites)
@@ -208,7 +202,7 @@ export let Dock = GObject.registerClass(
         this._dragging = false;
         this._trashIcon = null;
         this._recentFilesIcon = null;
-        this._downloadsIcon = null;
+        this._folderIcons = null;
       }
     }
 
@@ -220,7 +214,7 @@ export let Dock = GObject.registerClass(
       this._icons = null;
       this._trashIcon = null;
       this._recentFilesIcon = null;
-      this._downloadsIcon = null;
+      this._folderIcons = null;
       this._needsLayout = true;
       this.relayout(true);
       this._beginAnimation();
@@ -1063,66 +1057,70 @@ export let Dock = GObject.registerClass(
       }
 
       //---------------
-      // the folder icons
+      // the recent files icon (not ready: never shown)
       //---------------
-      //! add explanations
-      const downloadsPath =
-        this.extension.services?._downloadsDir?.get_path() ||
-        getDownloadsDir();
+      let services = this.extension.services;
+      let recents = {
+        icon: '_recentFilesIcon',
+        folder: 'recent:///',
+        //! find a way to avoid this
+        path: `${this.extension.path}/apps/recents-dash2dock-lite.desktop`,
+        // not ready for prime time
+        // does not work on gnome 43 (debian)
+        show: false, // this.extension.documents_icon,
+        prepare: () => services.checkRecents(),
+        files: () => services._recentFiles,
+        total: () => services._recentFilesLength,
+      };
+      if (!this[recents.icon] && recents.show) {
+        this[recents.icon] = DockItemList.createItem(this, recents);
+        this._icons = null;
+        this._needsLayout = true;
+      } else if (this[recents.icon] && !recents.show) {
+        this._destroyList();
+        this[recents.icon].destroy();
+        this[recents.icon] = null;
+        this._icons = null;
+        this._needsLayout = true;
+      }
 
-      let folders = [
-        {
-          icon: '_recentFilesIcon',
-          folder: 'recent:///',
-          //! find a way to avoid this
-          path: `${this.extension.path}/apps/recents-dash2dock-lite.desktop`,
-          // not ready for prime time
-          // does not work on gnome 43 (debian)
-          show: false, // this.extension.documents_icon,
-          prepare: this.extension.services.checkRecents.bind(
-            this.extension.services
-          ),
-          items: '_recentFiles',
-          itemsLength: '_recentFilesLength',
-          cleanup: (() => {
-            // this.extension.services._recentFiles = null;
-          }).bind(this),
-        },
-        {
-          icon: '_downloadsIcon',
-          folder: downloadsPath,
-          path:
-            this.extension.services?.folderApps?.downloads ||
-            this.extension.services?.setupFolderIcon?.(
-              'downloads',
-              'Downloads',
-              'folder-downloads',
-              downloadsPath
-            ),
-          show: this.extension.downloads_icon,
-          items: '_downloadFiles',
-          itemsLength: '_downloadFilesLength',
-          prepare: (() => {
-            this.extension.services._debounceCheckDownloads();
-          }).bind(this),
-          cleanup: () => {},
-        },
-      ];
-
-      folders.forEach((f) => {
-        if (!this[f.icon] && f.show) {
-          this[f.icon] = DockItemList.createItem(this, f);
-          this._icons = null;
-          this._needsLayout = true;
-        } else if (this[f.icon] && !f.show) {
-          // unpin downloads icon; the list may be showing its files
-          this._destroyList();
-          this[f.icon].destroy();
-          this[f.icon] = null;
-          this._icons = null;
-          this._needsLayout = true;
+      //---------------
+      // the folder stacks: Downloads + the folder-stacks setting
+      //---------------
+      let stacks = (services?.folderStacks ?? []).filter(
+        (s) => !s.isDownloads || this.extension.downloads_icon
+      );
+      this._folderIcons = this._folderIcons ?? new Map();
+      // services rebuilds stack objects on settings changes; drop stale items
+      this._folderIcons.forEach((item, key) => {
+        if (stacks.includes(item._folderStack)) {
+          return;
         }
-        f.cleanup();
+        // the list may be showing this stack's files
+        if (this._list?._target === item) {
+          this._destroyList();
+        }
+        item.destroy();
+        this._folderIcons.delete(key);
+        this._icons = null;
+        this._needsLayout = true;
+      });
+      stacks.forEach((stack) => {
+        if (this._folderIcons.has(stack.key)) {
+          return;
+        }
+        let item = DockItemList.createItem(this, {
+          icon: `_folderStack:${stack.key}`,
+          folder: stack.path,
+          path: stack.app,
+          prepare: () => services.checkFolderStack(stack),
+          files: () => stack.files,
+          total: () => stack.total,
+        });
+        item._folderStack = stack;
+        this._folderIcons.set(stack.key, item);
+        this._icons = null;
+        this._needsLayout = true;
       });
 
       //---------------

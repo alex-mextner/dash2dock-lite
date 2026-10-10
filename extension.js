@@ -56,7 +56,7 @@ const ACTION_ORDER = [
   'compiz',
   'bms',
   'blurred_bg',
-  'downloads_setup',
+  'folder_stacks_setup',
   'mounts',
   'recents_debounce',
   'animation_fps',
@@ -102,7 +102,8 @@ const REACTIONS = Object.freeze({
   'calendar-icon': ['layout', 'animate_refresh'],
   'clock-icon': ['layout', 'animate_refresh'],
   'favorites-only': ['layout', 'animate_refresh'],
-  'downloads-path': ['downloads_setup'],
+  'downloads-path': ['folder_stacks_setup', 'layout', 'animate_refresh'],
+  'folder-stacks': ['folder_stacks_setup', 'layout', 'animate_refresh'],
   'dock-location': ['layout', 'recreate_docks', 'animate_preview'],
   'icon-resolution': [
     'icon_resolution',
@@ -311,7 +312,7 @@ export default class Dash2DockLiteExt extends Extension {
     // service
     this.services = new Services();
     this.services.extension = this;
-    this.services.setupFolderIcons();
+    this.services.setupTrashIcon();
 
     // todo follow animator and autohider protocol
     this.services.enable();
@@ -680,13 +681,13 @@ export default class Dash2DockLiteExt extends Extension {
       compiz: () => this.integrations?.hookCompiz(),
       bms: () => this.integrations?.hookBms(),
       blurred_bg: () => this._updateBlurredBackground(),
-      downloads_setup: () => this.services?.setupDownloads(),
+      folder_stacks_setup: () => this.services?.setupFolderStacks(),
       mounts: () => {
         this.services?.checkMounts();
         this.services?._commitMounts();
       },
       recents_debounce: () => {
-        this.services?._debounceCheckDownloads();
+        this.services?.refreshFolderStacks();
         this.services?._debounceCheckRecents();
       },
       animation_fps: () => this._updateAnimationFPS(),

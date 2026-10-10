@@ -1,11 +1,7 @@
 'use strict';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import {
-  trySpawnCommandLine,
-  getDownloadsDir,
-  getDocumentsDir,
-} from './utils.js';
+import { trySpawnCommandLine, getDownloadsDir } from './utils.js';
 // import { trySpawnCommandLine } from 'resource:///org/gnome/shell/misc/util.js';
 
 import Gio from 'gi://Gio';
@@ -51,7 +47,6 @@ export const Services = class {
     this._cancellable = new Gio.Cancellable();
     this._mounts = {};
     this.trashApp = null;
-    this.folderApps = {};
     this.mountApps = {};
     this._services = [
       new ServiceCounter('trash', 1000 * 15, this.checkTrash.bind(this)),
@@ -122,7 +117,7 @@ export const Services = class {
       this
     );
 
-    this.setupDownloads();
+    this.setupFolderStacks();
 
     this._debounceCheckRecents();
 
@@ -138,9 +133,7 @@ export const Services = class {
   disable() {
     this._cancellable?.cancel();
     this._cancellable = null;
-    this._downloadsMonitor?.cancel();
-    this._downloadsMonitor?.disconnectObject(this);
-    this._downloadsMonitor = null;
+    this._teardownFolderStacks();
     this._services = [];
     this._volumeMonitor?.disconnectObject(this);
     this._volumeMonitor = null;
@@ -149,54 +142,118 @@ export const Services = class {
     this._trashMonitor = null;
     this._trashDir = null;
     this.extension._loTimer?.cancel(this._debounceRecentsSeq);
-    this.extension._loTimer?.cancel(this._debounceDownloadsSeq);
     this._debounceRecentsSeq = null;
-    this._debounceDownloadsSeq = null;
     this._mounts = {};
     this.trashApp = null;
-    this.folderApps = {};
     this.mountApps = {};
   }
 
-  setupDownloads() {
-    if (this._downloadsMonitor) {
-      this._downloadsMonitor.cancel();
-      this._downloadsMonitor.disconnectObject(this);
-      this._downloadsMonitor = null;
-    }
-    this._downloadsUserDir = this.extension.downloads_path;
-    let fn = this._downloadsUserDir
-      ? Gio.File.new_for_path(this._downloadsUserDir)
-      : null;
-    if (!fn || !fn.query_exists(null)) {
-      this._downloadsUserDir = null;
-    }
-    if (this._downloadsUserDir) {
-      this._downloadsDir = Gio.File.new_for_path(this._downloadsUserDir);
-    } else {
-      // fallback
-      this._downloadsDir = Gio.File.new_for_path(getDownloadsDir());
-    }
+  // Folders shown as stacks right of the apps, macOS style: Downloads plus the
+  // `folder-stacks` setting. Each folder is watched so its newest files are
+  // already listed when the stack opens.
+  setupFolderStacks() {
+    this._teardownFolderStacks();
 
-    this._downloadsMonitor = this._downloadsDir.monitor(
-      Gio.FileMonitorFlags.WATCH_MOVES,
-      null
-    );
-    this._downloadsMonitor.connectObject(
-      'changed',
-      (fileMonitor, file, otherFile, eventType) => {
-        switch (eventType) {
-          case Gio.FileMonitorEvent.CHANGED:
-          case Gio.FileMonitorEvent.CREATED:
-          case Gio.FileMonitorEvent.MOVED_IN:
-            return;
-        }
-        this._debounceCheckDownloads();
+    let downloads = this.extension.downloads_path;
+    if (!downloads || !GLib.file_test(downloads, GLib.FileTest.IS_DIR)) {
+      downloads = getDownloadsDir();
+    }
+    let stacks = [
+      {
+        key: 'downloads',
+        path: downloads,
+        title: 'Downloads',
+        icon: this._folderIconName(Gio.File.new_for_path(downloads)),
+        isDownloads: true,
       },
-      this
-    );
+    ];
 
-    this._debounceCheckDownloads();
+    // entries: "path" or { path, title?, icon? }; "~/" means the home folder
+    (this.extension.folder_stacks || []).forEach((entry) => {
+      let spec = typeof entry === 'string' ? { path: entry } : entry;
+      if (!spec || typeof spec.path !== 'string') {
+        return;
+      }
+      let path = spec.path.replace(/^~(?=\/|$)/, GLib.get_home_dir());
+      let dir = Gio.File.new_for_path(path);
+      if (!GLib.file_test(path, GLib.FileTest.IS_DIR)) {
+        console.warn(`d2da: folder stack ${path} is not a folder`);
+        return;
+      }
+      path = dir.get_path();
+      if (stacks.some((s) => s.path === path)) {
+        return;
+      }
+      stacks.push({
+        key: path,
+        path,
+        title: spec.title || this._folderDisplayName(dir),
+        icon: spec.icon || this._folderIconName(dir),
+      });
+    });
+
+    stacks.forEach((stack) => {
+      stack.files = null;
+      stack.total = 0;
+      stack.app = this.setupFolderIcon(
+        stack.key,
+        stack.title,
+        stack.icon,
+        stack.path
+      );
+      stack.monitor = Gio.File.new_for_path(stack.path).monitor(
+        Gio.FileMonitorFlags.WATCH_MOVES,
+        null
+      );
+      stack.monitor.connectObject(
+        'changed',
+        (fileMonitor, file, otherFile, eventType) => {
+          switch (eventType) {
+            case Gio.FileMonitorEvent.CHANGED:
+            case Gio.FileMonitorEvent.CREATED:
+            case Gio.FileMonitorEvent.MOVED_IN:
+              return;
+          }
+          this._debounceCheckFolderStack(stack);
+        },
+        this
+      );
+      this._debounceCheckFolderStack(stack);
+    });
+    this.folderStacks = stacks;
+  }
+
+  _teardownFolderStacks() {
+    (this.folderStacks || []).forEach((stack) => {
+      stack.monitor?.cancel();
+      stack.monitor?.disconnectObject(this);
+      stack.monitor = null;
+      this.extension._loTimer?.cancel(stack.checkSeq);
+      stack.checkSeq = null;
+    });
+    this.folderStacks = [];
+  }
+
+  _folderDisplayName(dir) {
+    try {
+      return dir
+        .query_info('standard::display-name', Gio.FileQueryInfoFlags.NONE, null)
+        .get_display_name();
+    } catch {
+      return dir.get_basename();
+    }
+  }
+
+  // the theme's icon for the folder (folder-pictures, folder-documents, ...)
+  _folderIconName(dir) {
+    try {
+      let icon = dir
+        .query_info('standard::icon', Gio.FileQueryInfoFlags.NONE, null)
+        .get_icon();
+      return this.extension.lookup_icon_from_names(icon?.names ?? []) ?? 'folder';
+    } catch {
+      return 'folder';
+    }
   }
 
   _commitMounts() {
@@ -253,34 +310,11 @@ export const Services = class {
     return this.trashApp;
   }
 
+  // the stack's dock item; activating it opens the folder itself
   setupFolderIcon(name, title, icon, path) {
-    let full_path = Gio.File.new_for_path(path).get_path();
-    let quoted_path = GLib.shell_quote(full_path);
-    let open_app = 'nautilus --select';
-
-    let content = `[Desktop Entry]\nVersion=1.0\nTerminal=false\nType=Application\nName=${title}\nExec=${open_app} ${quoted_path}\nIcon=${icon}\nStartupWMClass=${name}-dash2dock-lite\n`;
-    let appInfo = this._createAppInfoFromData(content);
-    if (!this.folderApps) {
-      this.folderApps = {};
-    }
-    this.folderApps[name] = appInfo;
-    return appInfo;
-  }
-
-  setupFolderIcons() {
-    this.setupTrashIcon();
-    this.setupFolderIcon(
-      'downloads',
-      'Downloads',
-      'folder-downloads',
-      getDownloadsDir()
-    );
-    this.setupFolderIcon(
-      'documents',
-      'Documents',
-      'folder-documents',
-      getDocumentsDir()
-    );
+    let quoted_path = GLib.shell_quote(Gio.File.new_for_path(path).get_path());
+    let content = `[Desktop Entry]\nVersion=1.0\nTerminal=false\nType=Application\nName=${this._escapeDesktopValue(title)}\nExec=nautilus ${quoted_path}\nIcon=${this._escapeDesktopValue(icon)}\nStartupWMClass=${this._toSafeFileName(name)}-dash2dock-lite\n`;
+    return this._createAppInfoFromData(content);
   }
 
   _toSafeFileName(name) {
@@ -704,12 +738,11 @@ export const Services = class {
     }
   }
 
-  async checkDownloads() {
+  async checkFolderStack(stack) {
     try {
-      let path = this._downloadsDir?.get_path();
-      if (!path) return;
-      [this._downloadFiles, this._downloadFilesLength] =
-        await this.checkRecentFilesInFolder(path);
+      [stack.files, stack.total] = await this.checkRecentFilesInFolder(
+        stack.path
+      );
     } catch (err) {
       if (
         this._cancellable?.is_cancelled() ||
@@ -718,24 +751,30 @@ export const Services = class {
       ) {
         return;
       }
-      console.error('d2da: services checkDownloads', err);
+      console.error('d2da: services checkFolderStack', err);
     }
   }
 
-  _debounceCheckDownloads() {
+  _debounceCheckFolderStack(stack) {
     if (this.extension._loTimer) {
-      if (!this._debounceDownloadsSeq) {
-        this._debounceDownloadsSeq = this.extension._loTimer.runDebounced(
+      if (!stack.checkSeq) {
+        stack.checkSeq = this.extension._loTimer.runDebounced(
           () => {
-            this.checkDownloads();
+            this.checkFolderStack(stack);
           },
           DEBOUNCE_CHECK_TIMEOUT,
-          'debounceCheckDownloads'
+          'debounceCheckFolderStack'
         );
       } else {
-        this.extension._loTimer.runDebounced(this._debounceDownloadsSeq);
+        this.extension._loTimer.runDebounced(stack.checkSeq);
       }
     }
+  }
+
+  refreshFolderStacks() {
+    (this.folderStacks || []).forEach((stack) => {
+      this._debounceCheckFolderStack(stack);
+    });
   }
 
   // keyed by root URI so two volumes with the same name get separate items;

@@ -180,6 +180,10 @@ export const SettingsKeys = (patch) => {
       default_value: '',
       widget_type: 'string',
     },
+    'folder-stacks': {
+      default_value: [],
+      widget_type: 'json_array',
+    },
     'downloads-icon-rotate-labels': {
       default_value: false,
       widget_type: 'switch',

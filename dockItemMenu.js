@@ -7,6 +7,7 @@ import { trySpawnCommandLine } from './utils.js';
 // import { trySpawnCommandLine } from 'resource:///org/gnome/shell/misc/util.js';
 
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
@@ -57,17 +58,17 @@ export const DockItemList = GObject.registerClass(
           target.activateNewWindow();
           return;
         }
-        if (!dock.extension.services[f.items]) {
+        if (!f.files()) {
           f.prepare();
         }
-        let files = [...(dock.extension.services[f.items] || [])];
+        let files = [...(f.files() || [])];
         if (!files.length) return;
-        if (files.length < dock.extension.services[f.itemsLength]) {
+        if (files.length < f.total()) {
           files = [
             {
               index: -1,
               name: 'More...',
-              exec: `${file_explorer} ${f.folder}`,
+              exec: `${file_explorer} ${GLib.shell_quote(f.folder)}`,
               icon: target._icon.icon_name,
               type: 'exec',
             },

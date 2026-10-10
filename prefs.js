@@ -129,6 +129,58 @@ export default class Preferences extends ExtensionPreferences {
     return null;
   }
 
+  _readFolderStacks(settings) {
+    try {
+      let stacks = JSON.parse(settings.get_string('folder-stacks'));
+      return Array.isArray(stacks) ? stacks : [];
+    } catch {
+      return [];
+    }
+  }
+
+  // one row per extra folder stack, each with a remove button
+  updateFolderStacks(builder, settings) {
+    let expander = builder.get_object('folder-stacks-row');
+    (this._folderStackRows || []).forEach((r) => expander.remove(r));
+    this._folderStackRows = this._readFolderStacks(settings).map(
+      (entry, idx, all) => {
+        let path = typeof entry === 'string' ? entry : entry?.path ?? '';
+        let row = new Adw.ActionRow({ title: GLib.markup_escape_text(path, -1) });
+        let remove = new Gtk.Button({
+          icon_name: 'list-remove-symbolic',
+          valign: Gtk.Align.CENTER,
+          tooltip_text: 'Remove',
+        });
+        remove.add_css_class('flat');
+        remove.connect('clicked', () => {
+          let next = all.filter((_, i) => i !== idx);
+          settings.set_string('folder-stacks', JSON.stringify(next));
+        });
+        row.add_suffix(remove);
+        expander.add_row(row);
+        return row;
+      }
+    );
+  }
+
+  addFolderStack(window, settings) {
+    new Gtk.FileDialog().select_folder(window, null, (dialog, task) => {
+      let folder = null;
+      try {
+        folder = dialog.select_folder_finish(task);
+      } catch (err) {
+        console.log(`d2da: select folder: ${err.message}`);
+      }
+      let path = folder?.get_path();
+      if (!path) {
+        return;
+      }
+      let stacks = this._readFolderStacks(settings);
+      stacks.push(path);
+      settings.set_string('folder-stacks', JSON.stringify(stacks));
+    });
+  }
+
   addButtonEvents(window, builder, settings) {
     // builder.get_object('static-animation').connect('clicked', () => {
     //   builder.get_object('animation-spread').set_value(0);
@@ -147,6 +199,16 @@ export default class Preferences extends ExtensionPreferences {
           });
       });
       this.updateFolders(window, builder, settings);
+    }
+
+    if (builder.get_object('folder-stacks-row')) {
+      builder.get_object('folder-stacks-add').connect('clicked', () => {
+        this.addFolderStack(window, settings);
+      });
+      settings.connect('changed::folder-stacks', () => {
+        this.updateFolderStacks(builder, settings);
+      });
+      this.updateFolderStacks(builder, settings);
     }
 
     if (builder.get_object('reset')) {
