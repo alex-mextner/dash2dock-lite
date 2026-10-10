@@ -157,7 +157,12 @@ export const Integrations = class {
           obj._dash_to_dock_blur.update_size_orig =
             obj._dash_to_dock_blur.update_size;
         }
-        if (hook && this.extension.blur_background) {
+        // the glass platter replaces Blur my Shell's blur
+        if (
+          hook &&
+          this.extension.blur_background &&
+          !this.extension.glass_material
+        ) {
           obj._dash_to_dock_blur.update_size = () => {};
         } else if (obj._dash_to_dock_blur.update_size_orig) {
           obj._dash_to_dock_blur.update_size =
@@ -187,7 +192,8 @@ export const Integrations = class {
       return;
     }
 
-    bms.visible = dock.extension.blur_background;
+    bms.visible =
+      dock.extension.blur_background && !dock.extension.glass_material;
     if (!bms.visible) {
       return;
     }

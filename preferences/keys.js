@@ -465,6 +465,27 @@ export const SettingsKeys = (patch) => {
       widget_type: 'switch',
       themed: true,
     },
+    'glass-material': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'glass-backdrop': {
+      default_value: 1,
+      widget_type: 'dropdown',
+      test: { values: [0, 1] },
+    },
+    'glass-blur': {
+      default_value: 10,
+      widget_type: 'scale',
+    },
+    'glass-refraction': {
+      default_value: 24,
+      widget_type: 'scale',
+    },
+    'glass-rim': {
+      default_value: 1,
+      widget_type: 'scale',
+    },
     'multi-monitor-filter': {
       default_value: 0,
       widget_type: 'dropdown',

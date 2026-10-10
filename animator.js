@@ -1120,6 +1120,7 @@ export let Animator = class {
       }
 
       dock._updateTransparenies();
+      dock._syncGlass();
     }
 
     dock.struts.visible = !dock._hidden;

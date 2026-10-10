@@ -14,6 +14,7 @@ import { Dash } from 'resource:///org/gnome/shell/ui/dash.js';
 
 import { TintEffect } from './effects/tint_effect.js';
 import { MonochromeEffect } from './effects/monochrome_effect.js';
+import { GlassPlatter } from './effects/glass.js';
 
 import { DockIcon, DockItemContainer, DockBackground } from './dockItems.js';
 import { DockItemList } from './dockItemMenu.js';
@@ -71,6 +72,8 @@ export let Dock = GObject.registerClass(
 
       this._background = new DockBackground({ name: 'd2daBackground' });
       this.add_child(this._background);
+      this._glass = null;
+      this._updateGlass();
 
       // for blur-my-shell
       this._slider = {
@@ -154,6 +157,9 @@ export let Dock = GObject.registerClass(
         // before super.destroy() takes renderArea with it
         this.animator.destroy();
         this.animator = null;
+
+        this._glass?.destroy();
+        this._glass = null;
 
         this.autohider.disable();
         this.autohider.dock = null;
@@ -1420,6 +1426,70 @@ export let Dock = GObject.registerClass(
       this._needsLayout = true;
     }
 
+    // Creates or removes the Liquid Glass platter per the glass-material key.
+    _updateGlass() {
+      if (!this.extension.glass_material) {
+        this._glass?.destroy();
+        this._glass = null;
+        return;
+      }
+      if (!this._glass) {
+        this._glass = new GlassPlatter();
+        this.insert_child_below(this._glass, this._background);
+      }
+      this._syncGlass();
+    }
+
+    // Fits the glass to the background; called every animation frame.
+    _syncGlass() {
+      const glass = this._glass;
+      // St widgets warn when measured off stage; the animator syncs later
+      if (!glass || !this.get_stage()) return;
+
+      const bg = this._background;
+      const x = bg.x;
+      const y = bg.y;
+      const w = bg.width;
+      const h = bg.height;
+      // Hidden (so unmapped: no clone, blur or shader work) with the
+      // background (no icons, transparent overview) and while autohide has
+      // slid it out of the dock's clip. Fullscreen hides the whole dock.
+      const visible =
+        bg.opacity > 0 &&
+        Number.isFinite(x) &&
+        Number.isFinite(y) &&
+        w > 0 &&
+        h > 0 &&
+        x < this.width &&
+        y < this.height &&
+        x + w > 0 &&
+        y + h > 0;
+      glass.visible = visible;
+      if (!visible) return;
+
+      // per frame, so no allocations here: scalars only
+      const ext = this.extension;
+      const scale = this._scaleFactor || 1;
+      const c = ext.background_color;
+      glass.setBackdrop(
+        ext.glass_backdrop === 1 ? 'wallpaper' : 'windows',
+        this._monitorIndex
+      );
+      glass.setMaterial(
+        (ext.computed_border_radius ?? 0) * scale,
+        ext.glass_blur * scale,
+        ext.glass_refraction * scale,
+        ext.glass_rim,
+        c[0],
+        c[1],
+        c[2],
+        c[3],
+        scale
+      );
+      // the dock is a direct child of uiGroup, which sits at the stage origin
+      glass.setGeometry(x, y, w, h, this.x, this.y, this.width, this.height);
+    }
+
     _updateTransparenies() {
       let transparent =
         (Main.overview.visible || this.extension._inOverview) &&
@@ -1429,7 +1499,9 @@ export let Dock = GObject.registerClass(
 
       if (this.animator._bms && this.animator._bms.first_child) {
         this.animator._bms.first_child.visible =
-          !transparent && this.extension.blur_background;
+          !transparent &&
+          this.extension.blur_background &&
+          !this.extension.glass_material;
       }
 
       if (this.extension.customize_topbar) {

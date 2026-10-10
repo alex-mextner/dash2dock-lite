@@ -373,6 +373,88 @@
         </child>
         <child>
           <object class="AdwActionRow">
+            <property name="title" translatable="yes">Liquid Glass</property>
+            <property name="subtitle" translatable="yes">Draw the dock as refractive glass over a blurred backdrop. Uses Background Color as the tint.</property>
+            <property name="activatable-widget">glass-material</property>
+            <child>
+              <object class="GtkSwitch" id="glass-material">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Glass Backdrop</property>
+            <property name="subtitle" translatable="yes">What shows through the glass. Windows and wallpaper re-blurs whenever a window under the dock redraws; wallpaper only costs nothing while the desktop is still.</property>
+            <property name="activatable-widget">glass-backdrop</property>
+            <child>
+              <object class="GtkDropDown" id="glass-backdrop">
+                <property name="valign">center</property>
+                <property name="model">glass-backdrop-model</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Glass Blur</property>
+            <property name="subtitle" translatable="yes">Blur of the backdrop seen through the glass.</property>
+            <property name="activatable-widget">glass-blur</property>
+            <child>
+              <object class="GtkScale" id="glass-blur">
+                <property name="valign">center</property>
+                <property name="hexpand">true</property>
+                <property name="width-request">140px</property>
+                <property name="draw-value">false</property>
+                <property name="value-pos">right</property>
+                <property name="orientation">horizontal</property>
+                <property name="digits">0</property>
+                <property name="adjustment">glass-blur-adjust</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Glass Refraction</property>
+            <property name="subtitle" translatable="yes">How strongly the glass edge bends what is behind it.</property>
+            <property name="activatable-widget">glass-refraction</property>
+            <child>
+              <object class="GtkScale" id="glass-refraction">
+                <property name="valign">center</property>
+                <property name="hexpand">true</property>
+                <property name="width-request">140px</property>
+                <property name="draw-value">false</property>
+                <property name="value-pos">right</property>
+                <property name="orientation">horizontal</property>
+                <property name="digits">0</property>
+                <property name="adjustment">glass-refraction-adjust</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Glass Rim</property>
+            <property name="subtitle" translatable="yes">Brightness of the highlight along the glass edge.</property>
+            <property name="activatable-widget">glass-rim</property>
+            <child>
+              <object class="GtkScale" id="glass-rim">
+                <property name="valign">center</property>
+                <property name="hexpand">true</property>
+                <property name="width-request">140px</property>
+                <property name="draw-value">false</property>
+                <property name="value-pos">right</property>
+                <property name="orientation">horizontal</property>
+                <property name="digits">2</property>
+                <property name="adjustment">glass-rim-adjust</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
             <property name="title" translatable="yes">Transparent Background on Overview</property>
             <property name="subtitle" translatable="yes">Remove background on overview.</property>
             <property name="activatable-widget">overview-transparent-background</property>
@@ -737,6 +819,27 @@
     <property name="lower">-1.0</property>
     <property name="upper">1.0</property>
     <property name="step-increment">0.01</property>
+  </object>
+  <object class="GtkAdjustment" id="glass-blur-adjust">
+    <property name="lower">0</property>
+    <property name="upper">40</property>
+    <property name="step-increment">1</property>
+  </object>
+  <object class="GtkAdjustment" id="glass-refraction-adjust">
+    <property name="lower">0</property>
+    <property name="upper">40</property>
+    <property name="step-increment">1</property>
+  </object>
+  <object class="GtkAdjustment" id="glass-rim-adjust">
+    <property name="lower">0.0</property>
+    <property name="upper">1.0</property>
+    <property name="step-increment">0.05</property>
+  </object>
+  <object class="GtkStringList" id="glass-backdrop-model">
+    <items>
+      <item translatable="yes">Windows and wallpaper</item>
+      <item translatable="yes">Wallpaper only</item>
+    </items>
   </object>
   <object class="GtkStringList" id="running-indicator-style-model">
     <items>

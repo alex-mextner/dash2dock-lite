@@ -476,6 +476,31 @@
         <summary>Enable background blur</summary>
         <description></description>
     </key>
+    <key type="b" name="glass-material">
+        <default>false</default>
+        <summary>Liquid Glass material</summary>
+        <description>Draw the dock background as refractive glass over a blurred backdrop.</description>
+    </key>
+    <key type="i" name="glass-backdrop">
+        <default>1</default>
+        <summary>Glass backdrop</summary>
+        <description>What the glass shows: 0 = windows and wallpaper (live), 1 = wallpaper only.</description>
+    </key>
+    <key type="d" name="glass-blur">
+        <default>10</default>
+        <summary>Glass blur</summary>
+        <description>Backdrop blur radius in pixels.</description>
+    </key>
+    <key type="d" name="glass-refraction">
+        <default>24</default>
+        <summary>Glass refraction</summary>
+        <description>How far the glass edge bends the backdrop, in pixels.</description>
+    </key>
+    <key type="d" name="glass-rim">
+        <default>1</default>
+        <summary>Glass rim</summary>
+        <description>Strength of the specular edge highlight (0 to 1).</description>
+    </key>
     <key type="i" name="multi-monitor-filter">
         <default>0</default>
         <summary>Multi-Monitor Filter</summary>

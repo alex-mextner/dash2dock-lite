@@ -56,6 +56,7 @@ const ACTION_ORDER = [
   'compiz',
   'bms',
   'blurred_bg',
+  'glass',
   'folder_stacks_setup',
   'mounts',
   'recents_debounce',
@@ -148,6 +149,11 @@ const REACTIONS = Object.freeze({
   'background-color': ['bms', 'blurred_bg', 'style', 'layout', 'animate'],
   'blur-resolution': ['bms', 'blurred_bg', 'style', 'layout', 'animate'],
   'blur-background': ['bms', 'blurred_bg', 'style', 'layout', 'animate'],
+  'glass-material': ['bms', 'glass', 'style', 'layout', 'animate'],
+  'glass-backdrop': ['glass', 'animate'],
+  'glass-blur': ['glass', 'animate'],
+  'glass-refraction': ['glass', 'animate'],
+  'glass-rim': ['glass', 'animate'],
   'pressure-sense': [],
   'downloads-icon': ['layout', 'animate_refresh'],
   'documents-icon': ['layout', 'animate_refresh'],
@@ -681,6 +687,11 @@ export default class Dash2DockLiteExt extends Extension {
       compiz: () => this.integrations?.hookCompiz(),
       bms: () => this.integrations?.hookBms(),
       blurred_bg: () => this._updateBlurredBackground(),
+      glass: () => {
+        this.docks?.forEach((dock) => {
+          dock._updateGlass();
+        });
+      },
       folder_stacks_setup: () => this.services?.setupFolderStacks(),
       mounts: () => {
         this.services?.checkMounts();
@@ -1119,7 +1130,10 @@ export default class Dash2DockLiteExt extends Extension {
       ss.push(`border-radius: ${r}px;`);
       this.computed_border_radius = r;
       let rgba = this._style.rgba(this.background_color);
-      ss.push(`background: rgba(${rgba});`);
+      // with glass on, the glass platter draws the tint and the rims
+      ss.push(
+        this.glass_material ? 'background: transparent;' : `background: rgba(${rgba});`
+      );
       styles.push(`#d2daBackground { ${ss.join(' ')}}`);
     }
 
@@ -1228,7 +1242,7 @@ export default class Dash2DockLiteExt extends Extension {
     // no longer necessary<<<?
 
     let border_style = '';
-    if (this.border_thickness /* && !this._disable_borders */) {
+    if (this.border_thickness && !this.glass_material) {
       let rgba = this._style.rgba(this.border_color);
       border_style = `border: ${this.border_thickness}px solid rgba(${rgba}) !important;`;
     }
