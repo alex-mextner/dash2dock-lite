@@ -21,6 +21,12 @@
 // Shell's own minimize/unminimize handlers stay connected but are blocked
 // while the genie is enabled; windows the genie does not animate (maximized,
 // no icon, overview open, ...) are handed to them unchanged.
+//
+// As on macOS the animating window draws above every other window: Mutter
+// restacks right after a minimize (focus moves on) and would put the newly
+// focused window over the genie. The actor is raised within its group for
+// the animation, again after every restack, and put back where Mutter's
+// stack has it once done.
 
 import Clutter from 'gi://Clutter';
 import Cogl from 'gi://Cogl';
@@ -296,7 +302,11 @@ export class Genie {
     actor.add_effect_with_name(EFFECT_NAME, effect);
 
     let timeline = new Clutter.Timeline({ actor, duration: DURATION_MS });
+    if (this._running.size === 0) {
+      global.display.connectObject('restacked', () => this._raise(), this);
+    }
     this._running.set(actor, { shellwm, timeline, effect, minimize });
+    this._raise();
     timeline.connectObject(
       'new-frame',
       () => {
@@ -308,8 +318,8 @@ export class Genie {
       () => this._finish(actor),
       this
     );
-    // destroyed mid-animation: nothing left to complete
-    actor.connectObject('destroy', () => this._drop(actor), this);
+    // destroyed mid-animation: nothing left to complete or restack
+    actor.connectObject('destroy', () => this._drop(actor, false), this);
     timeline.start();
   }
 
@@ -321,14 +331,36 @@ export class Genie {
     else animation.shellwm.completed_unminimize(actor);
   }
 
-  _drop(actor) {
+  _drop(actor, restack = true) {
     let animation = this._running.get(actor);
     if (!animation) return null;
     this._running.delete(actor);
+    if (this._running.size === 0) global.display.disconnectObject(this);
     actor.disconnectObject(this);
     animation.timeline.disconnectObject(this);
     animation.timeline.stop();
     actor.remove_effect(animation.effect);
+    if (restack) this._restack(actor);
     return animation;
+  }
+
+  // animating windows above all others, in the order they started
+  _raise() {
+    for (let actor of this._running.keys()) {
+      actor.get_parent()?.set_child_above_sibling(actor, null);
+    }
+  }
+
+  // back to its place in Mutter's stack (global.get_window_actors() is kept
+  // bottom to top); Mutter only re-syncs actor order on its next restack
+  _restack(actor) {
+    let parent = actor.get_parent();
+    let actors = global.get_window_actors();
+    let index = actors.indexOf(actor);
+    if (!parent || index < 0) return;
+    let above = actors
+      .slice(index + 1)
+      .find((other) => other.get_parent() === parent);
+    if (above) parent.set_child_below_sibling(actor, above);
   }
 }
