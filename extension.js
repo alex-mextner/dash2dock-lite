@@ -86,6 +86,7 @@ const ACTION_ORDER = [
 const REACTIONS = Object.freeze({
   'lamp-app-animation': ['compiz'],
   'minimize-to-icon': ['window_feedback'],
+  'urgent-bounce': ['window_feedback'],
   'animation-fps': ['animation_fps'],
   'debug-visual': ['animate'],
   'mounted-icon': ['mounts', 'animate_refresh'],
@@ -424,6 +425,12 @@ export default class Dash2DockLiteExt extends Extension {
     console.log('dash2dock-lite disabled');
 
     probe(this, 'after-disable', probeTimers);
+  }
+
+  // App-level attention request (e.g. Unity LauncherEntry `urgent`): true
+  // bounces the app's icon until it is focused, false withdraws the request.
+  onAppAttention(app, urgent) {
+    this.windowFeedback?.setAppAttention(app, urgent);
   }
 
   animate(settings = {}) {

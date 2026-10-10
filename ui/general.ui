@@ -130,6 +130,18 @@
           </object>
         </child>
         <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Bounce For Attention</property>
+            <property name="subtitle" translatable="yes">Keep bouncing the icon of an app that asks for attention until it is focused, and show the dock if it is hidden.</property>
+            <property name="activatable-widget">urgent-bounce</property>
+            <child>
+              <object class="GtkSwitch" id="urgent-bounce">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
           <object class="AdwActionRow" id="lamp-app-animation-row">
             <property name="visible">true</property>
             <property name="title" translatable="yes">Lamp Animation</property>

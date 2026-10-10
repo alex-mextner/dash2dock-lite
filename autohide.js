@@ -184,6 +184,11 @@ export let AutoHide = class {
       return false;
     }
 
+    // an app asking for attention bounces on a shown dock (urgent-bounce)
+    if (this.extension.windowFeedback?.revealsDock) {
+      return false;
+    }
+
     // console.log("checking pointer location...");
 
     // Only a shown dock is kept up by the pointer (_isWithinDash is false while

@@ -1142,7 +1142,8 @@ export let Animator = class {
     dock.extension.integrations.bms_update_size(this);
   }
 
-  bounceIcon(appwell) {
+  // hops: number of bounces; defaults to the animation-bounce-frequency pick
+  bounceIcon(appwell, hops = null) {
     let dock = this.dock;
     let app_id = Compat.getAppId(appwell);
     // lets other triggers for the same launch (dock click, then the app's
@@ -1250,11 +1251,9 @@ export let Animator = class {
     ];
 
     let frames = [];
-    for (
-      let i = 0;
-      i < [3, 1, 2, 3][dock.extension.animation_bounce_frequency || 0];
-      i++
-    ) {
+    let count =
+      hops ?? [3, 1, 2, 3][dock.extension.animation_bounce_frequency || 0];
+    for (let i = 0; i < count; i++) {
       _frames.forEach((b) => {
         frames.push({
           ...b,

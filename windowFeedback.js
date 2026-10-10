@@ -10,6 +10,10 @@
 //   settles after a change (Dock._endAnimation), never per frame.
 // * launch-bounce-anywhere: a pinned app bounces however it was launched
 //   (Super+N, app grid, a terminal), not only from a dock click.
+// * urgent-bounce: while an app wants attention (a window demands attention
+//   or is urgent, or its LauncherEntry is urgent via onAppAttention) and is
+//   not focused, its icon keeps bouncing and an autohidden dock stays shown,
+//   as on macOS. Focusing the app or the request ending stops it.
 
 import GLib from 'gi://GLib';
 import Mtk from 'gi://Mtk';
@@ -23,6 +27,12 @@ import { DockPosition } from './dock.js';
 // this window belongs to the same launch.
 const LAUNCH_BOUNCE_DEDUPE_MS = 1500;
 
+// One hop lasts about 1 s (animator.bounceIcon); a pause between hops keeps
+// them readable. macOS bounces until the app is activated: the cap keeps a
+// forgotten request from animating forever.
+const ATTENTION_PERIOD_MS = 1500;
+const ATTENTION_MAX_HOPS = 10;
+
 export class WindowFeedback {
   constructor(extension) {
     this._extension = extension;
@@ -32,6 +42,8 @@ export class WindowFeedback {
     this._geometryWindows = new Set();
     // ids of apps seen STARTING: their RUNNING is the same launch
     this._starting = new Set();
+    // Shell.App -> { windows: Set<Meta.Window>, external, hops, sourceId }
+    this._attention = new Map();
   }
 
   enable() {
@@ -41,12 +53,23 @@ export class WindowFeedback {
       (appSystem, app) => this._onAppStateChanged(app),
       this
     );
+    global.display.connectObject(
+      'window-demands-attention',
+      (display, window) => this._onWindowAttention(window),
+      'window-marked-urgent',
+      (display, window) => this._onWindowAttention(window),
+      'notify::focus-window',
+      () => this._onFocusWindow(),
+      this
+    );
     this.update();
   }
 
   disable() {
     Shell.AppSystem.get_default().disconnectObject(this);
+    global.display.disconnectObject(this);
     this._starting.clear();
+    this._endAllAttention();
     if (this._geometryIdleId) {
       GLib.source_remove(this._geometryIdleId);
       this._geometryIdleId = 0;
@@ -61,6 +84,9 @@ export class WindowFeedback {
       this.queueIconGeometry();
     } else {
       this._clearIconGeometry();
+    }
+    if (!this._extension.urgent_bounce) {
+      this._endAllAttention();
     }
   }
 
@@ -100,13 +126,165 @@ export class WindowFeedback {
     if (!ext.launch_bounce_anywhere || !ext.open_app_animation) return;
     if (!Fav.getAppFavorites().isFavorite(app.get_id())) return;
     let now = Date.now();
-    for (let dock of ext.docks ?? []) {
-      let icons = dock._icons ?? dock._findIcons();
-      let container = icons.find((c) => c._appwell?.app === app);
-      if (!container) continue;
+    for (let [dock, container] of this._appIcons(app)) {
       if (now - (container._appwell._bounceAt ?? 0) < LAUNCH_BOUNCE_DEDUPE_MS)
         continue;
       dock._maybeBounce(container, true);
+    }
+  }
+
+  // [dock, icon container] for each dock showing the app
+  _appIcons(app) {
+    let found = [];
+    for (let dock of this._extension.docks ?? []) {
+      let icons = dock._icons ?? dock._findIcons();
+      let container = icons.find((c) => c._appwell?.app === app);
+      if (container) found.push([dock, container]);
+    }
+    return found;
+  }
+
+  // Entry point for app-level urgency (Unity LauncherEntry `urgent`):
+  // true starts the bounce, false withdraws this request.
+  setAppAttention(app, urgent) {
+    if (!app) return;
+    if (urgent) {
+      if (!this._extension.urgent_bounce || this._isFocused(app)) return;
+      let entry = this._attentionEntry(app);
+      entry.external = true;
+      this._startAttention(app, entry);
+    } else {
+      let entry = this._attention.get(app);
+      if (!entry) return;
+      entry.external = false;
+      this._maybeEndAttention(app, entry);
+    }
+  }
+
+  // Same filter as Shell's WindowAttentionHandler: a focused window or a
+  // skip-taskbar one (tool palettes) asks for nothing.
+  _onWindowAttention(window) {
+    if (!this._extension.urgent_bounce) return;
+    if (!window || window.has_focus() || window.is_skip_taskbar()) return;
+    let app = this._tracker?.get_window_app(window);
+    if (!app) return;
+    let entry = this._attentionEntry(app);
+    if (!entry.windows.has(window)) {
+      entry.windows.add(window);
+      window.connectObject(
+        'notify::demands-attention',
+        () => this._syncWindowAttention(window, app),
+        'notify::urgent',
+        () => this._syncWindowAttention(window, app),
+        'unmanaged',
+        () => this._dropWindowAttention(window, app),
+        this
+      );
+    }
+    this._startAttention(app, entry);
+  }
+
+  _syncWindowAttention(window, app) {
+    if (!window.demands_attention && !window.urgent) {
+      this._dropWindowAttention(window, app);
+    }
+  }
+
+  _dropWindowAttention(window, app) {
+    window.disconnectObject(this);
+    let entry = this._attention.get(app);
+    if (!entry) return;
+    entry.windows.delete(window);
+    this._maybeEndAttention(app, entry);
+  }
+
+  // the user went to the app: whatever it asked for has been seen
+  _onFocusWindow() {
+    let window = global.display.focus_window;
+    let app = window ? this._tracker?.get_window_app(window) : null;
+    if (app && this._attention.has(app)) this._endAttention(app);
+  }
+
+  _isFocused(app) {
+    let window = global.display.focus_window;
+    return !!window && this._tracker?.get_window_app(window) === app;
+  }
+
+  _attentionEntry(app) {
+    let entry = this._attention.get(app);
+    if (!entry) {
+      entry = { windows: new Set(), external: false, hops: 0, sourceId: 0 };
+      this._attention.set(app, entry);
+    }
+    return entry;
+  }
+
+  _startAttention(app, entry) {
+    // already bouncing, or done bouncing for this request
+    if (entry.sourceId || entry.hops >= ATTENTION_MAX_HOPS) return;
+    this._revealDocks();
+    this._attentionHop(app, entry);
+    entry.sourceId = GLib.timeout_add(
+      GLib.PRIORITY_DEFAULT,
+      ATTENTION_PERIOD_MS,
+      () => {
+        if (this._attentionHop(app, entry)) return GLib.SOURCE_CONTINUE;
+        // capped: stop animating and let autohide have the dock back; the
+        // entry stays so the same request does not restart the bounce
+        entry.sourceId = 0;
+        this._releaseDocks();
+        return GLib.SOURCE_REMOVE;
+      }
+    );
+  }
+
+  _attentionHop(app, entry) {
+    if (entry.hops >= ATTENTION_MAX_HOPS) return false;
+    entry.hops++;
+    for (let [dock, container] of this._appIcons(app)) {
+      if (container.child) dock.animator?.bounceIcon(container.child, 1);
+    }
+    return true;
+  }
+
+  _maybeEndAttention(app, entry) {
+    if (entry.windows.size === 0 && !entry.external) this._endAttention(app);
+  }
+
+  _endAttention(app) {
+    let entry = this._attention.get(app);
+    if (!entry) return;
+    this._attention.delete(app);
+    if (entry.sourceId) GLib.source_remove(entry.sourceId);
+    entry.sourceId = 0;
+    for (let window of entry.windows) window.disconnectObject(this);
+    entry.windows.clear();
+    this._releaseDocks();
+  }
+
+  _endAllAttention() {
+    for (let app of [...this._attention.keys()]) this._endAttention(app);
+  }
+
+  // autohide.js keeps a dock shown while this is true
+  get revealsDock() {
+    for (let entry of this._attention.values()) {
+      if (entry.sourceId) return true;
+    }
+    return false;
+  }
+
+  _revealDocks() {
+    for (let dock of this._extension.docks ?? []) {
+      if (dock.autohider?._enabled) dock.autohider.show();
+    }
+  }
+
+  // hand the dock back to autohide once nothing bounces any more
+  _releaseDocks() {
+    if (this.revealsDock) return;
+    for (let dock of this._extension.docks ?? []) {
+      dock.autohider?._debounceCheckHide();
     }
   }
 

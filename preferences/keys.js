@@ -57,6 +57,10 @@ export const SettingsKeys = (patch) => {
       default_value: false,
       widget_type: 'switch',
     },
+    'urgent-bounce': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'lamp-app-animation': {
       default_value: false,
       widget_type: 'switch',
