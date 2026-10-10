@@ -632,12 +632,13 @@ export let Animator = class {
           (icon._icon.translationY + translationY * 3) / 4;
       }
 
-      // clear bounce animation
+      // A running bounce sets _bounce on each of its frames, before or after
+      // this one depending on which timer subscriber came first; only once
+      // none has run since the last frame is its offset cleared. The flag is
+      // consumed below, after the renderer has seen it.
       if (icon._appwell) {
-        icon._appwell.translationY = 0;
         didBounce = icon._appwell._bounce;
-        // clear bounce
-        icon._appwell._bounce = false;
+        if (!didBounce) icon._appwell.translationY = 0;
       }
     });
 
@@ -699,7 +700,9 @@ export let Animator = class {
         icon._renderer._icon = icon._icon;
         icon._renderer.set_style_class_name('');
 
-        if (!icon._appwell?._bounce) {
+        if (icon._appwell?._bounce) {
+          icon._appwell._bounce = false;
+        } else {
           icon._renderer.translationY = 0;
         }
 
