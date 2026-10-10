@@ -22,6 +22,11 @@ import { AutoHide } from './autohide.js';
 import { Animator } from './animator.js';
 import { live } from './probe.js';
 import { get_distance_sqr, get_distance, isInRect, isOverlapRect } from './utils.js';
+import {
+  filterDashRunningApps,
+  onActiveWorkspace,
+  runningApps,
+} from './windowsView.js';
 
 const Point = Graphene.Point;
 
@@ -454,6 +459,7 @@ export let Dock = GObject.registerClass(
       dash.connect('destroy', () => live('dash', -1));
 
       Compat.setupDashProxy(dash);
+      filterDashRunningApps(dash, () => this.extension.isolate_workspaces);
 
       this.dash = dash;
       let dashBg = Compat.getDashBackground(this.dash);
@@ -634,9 +640,9 @@ export let Dock = GObject.registerClass(
         let favorites = Fav.getAppFavorites().getFavoriteMap();
         apps = Object.keys(favorites).length;
         if (!this.extension.favorites_only) {
-          apps += Shell.AppSystem.get_default()
-            .get_running()
-            .filter((app) => !(app.get_id() in favorites)).length;
+          apps += runningApps(this.extension.isolate_workspaces).filter(
+            (app) => !(app.get_id() in favorites)
+          ).length;
         }
       } catch {
         // fall back to the actors found
@@ -975,14 +981,12 @@ export let Dock = GObject.registerClass(
                 if (!target._menu) {
                   this._maybeBounce(target);
                 }
-                this._maybeMinimizeOrMaximize(target._appwell.app, button);
-                return target._appwell._activate(button);
+                return this._activateAppIcon(target._appwell, button);
               }
               if (!c._menu) {
                 this._maybeBounce(c);
               }
-              this._maybeMinimizeOrMaximize(c._appwell.app, button);
-              return c._appwell._activate(button);
+              return this._activateAppIcon(c._appwell, button);
             } catch (e) {
               console.error('d2da: appwell activate', e);
             }
@@ -1154,6 +1158,16 @@ export let Dock = GObject.registerClass(
           this._needsLayout = true;
         }
       }
+    }
+
+    // Windows/workspace changed (WindowEvents): re-filter the running apps
+    // and redraw the dots.
+    _onWindowsChanged() {
+      if (this.extension.isolate_workspaces) {
+        this.dash?._queueRedisplay();
+      }
+      this._needsLayout = true;
+      this._beginAnimation();
     }
 
     _snapToContainerEdge(container, child, edge = true) {
@@ -1684,17 +1698,37 @@ export let Dock = GObject.registerClass(
       });
     }
 
-    _maybeMinimizeOrMaximize(app, button) {
-      if (!app?.get_windows) {
-        return;
+    // Activation of a running or stopped app's icon. Workspace isolation is
+    // opt-in; otherwise the Shell's own AppIcon.activate runs, after the
+    // minimize/maximize handling.
+    _activateAppIcon(appwell, button) {
+      let app = appwell.app;
+      this._maybeMinimizeOrMaximize(app, button);
+      if (
+        this.extension.isolate_workspaces &&
+        app.state === Shell.AppState.RUNNING &&
+        !this._clickState(app, button).openNewWindow
+      ) {
+        // the Shell's app.activate() would jump to the app's last window on
+        // any workspace; isolated, focus this workspace's most recent window,
+        // or open a new one here (Ubuntu Dock isolate-workspaces). Apps that
+        // cannot open another window still go to the one they have.
+        let windows = this.getAppWindowsFiltered(app);
+        if (windows.length || app.can_open_new_window()) {
+          if (!windows.length) {
+            appwell.animateLaunch?.();
+            app.open_new_window(-1);
+          } else if (!windows.some((w) => w.has_focus())) {
+            Main.activateWindow(windows[0]);
+          }
+          Main.overview.hide();
+          return;
+        }
       }
+      return appwell._activate(button);
+    }
 
-      // let windows = app.get_windows();
-      let windows = this.getAppWindowsFiltered(app);
-      if (!windows.length) {
-        return;
-      }
-
+    _clickState(app, button) {
       let event = Clutter.get_current_event();
       let modifiers = event ? event.get_state() : 0;
       // St.Button activates on release, whose state still holds the pressed
@@ -1718,6 +1752,21 @@ export let Dock = GObject.registerClass(
         app.can_open_new_window() &&
         app.state == Shell.AppState.RUNNING &&
         (isCtrlPressed || isMiddleButton);
+      return { shift, openNewWindow };
+    }
+
+    _maybeMinimizeOrMaximize(app, button) {
+      if (!app?.get_windows) {
+        return;
+      }
+
+      // let windows = app.get_windows();
+      let windows = this.getAppWindowsFiltered(app);
+      if (!windows.length) {
+        return;
+      }
+
+      let { shift, openNewWindow } = this._clickState(app, button);
       if (openNewWindow) return;
 
       let workspaceManager = global.workspace_manager;
@@ -1757,7 +1806,10 @@ export let Dock = GObject.registerClass(
         // multi-monitors fix -- where focus can seem to get lost
         if (!hidden.length) {
           let windows = app.get_windows().filter((w) => {
-            return w.get_monitor() == this._monitor.index;
+            return (
+              w.get_monitor() == this._monitor.index &&
+              (!this.extension.isolate_workspaces || onActiveWorkspace(w))
+            );
           });
           if (windows.length > 0) {
             this.extension._hiTimer.runOnce(() => {
@@ -1839,12 +1891,16 @@ export let Dock = GObject.registerClass(
         }
       }
 
+      let windows = app.get_windows();
       if (apply_filtering) {
-        return app.get_windows().filter((w) => {
+        windows = windows.filter((w) => {
           return w.get_monitor() == this._monitor.index;
         });
       }
-      return app.get_windows();
+      if (this.extension.isolate_workspaces) {
+        windows = windows.filter(onActiveWorkspace);
+      }
+      return windows;
     }
 
     _onScrollEvent(obj, evt) {

@@ -39,6 +39,7 @@ import { runTests } from './diagnostics.js';
 import { probe, applySmokeSettings } from './probe.js';
 import * as Compat from './compat.js';
 import { WallpaperTone, markColors } from './contrast.js';
+import { WindowEvents } from './windowsView.js';
 
 import {
   Extension,
@@ -75,6 +76,7 @@ const ACTION_ORDER = [
   'style',
   'icon_effect',
   'icon_effect_color',
+  'windows_view',
   'layout',
   'animate_refresh',
   'animate_preview',
@@ -169,6 +171,7 @@ const REACTIONS = Object.freeze({
   'downloads-icon': ['layout', 'animate_refresh'],
   'documents-icon': ['layout', 'animate_refresh'],
   'trash-icon': ['layout', 'animate_refresh'],
+  'isolate-workspaces': ['windows_view', 'layout', 'animate_refresh'],
 });
 
 export default class Dash2DockLiteExt extends Extension {
@@ -348,6 +351,8 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateBlurredBackground();
 
     this._addEvents();
+    this._windowEvents = new WindowEvents(() => this._onWindowsChanged());
+    this._updateWindowsView();
     this._queryDisplay();
     // this.startUp();
 
@@ -382,6 +387,9 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateContrast(true);
 
     this._showMainOverviewDash(true);
+
+    this._windowEvents?.destroy();
+    this._windowEvents = null;
 
     this.destroyDocks();
     this.docks = [];
@@ -737,6 +745,7 @@ export default class Dash2DockLiteExt extends Extension {
           dock._updateIconEffectColor(this.icon_effect_color);
         });
       },
+      windows_view: () => this._updateWindowsView(),
       layout: () => this._updateLayout(),
       animate_refresh: () => this.animate({ refresh: true }),
       animate_preview: () => {
@@ -972,6 +981,25 @@ export default class Dash2DockLiteExt extends Extension {
     listeners.forEach((l) => {
       if (l._onAppsChanged) l._onAppsChanged();
     });
+  }
+
+  // isolate-workspaces needs window and workspace signals; connect them
+  // only while it is on
+  _updateWindowsView() {
+    if (this.isolate_workspaces) {
+      this._windowEvents?.enable();
+    } else {
+      this._windowEvents?.disable();
+    }
+    this.docks?.forEach((dock) => {
+      // isolation toggled: the Dash re-reads its (filtered) running apps
+      dock.dash?._queueRedisplay();
+      dock._onWindowsChanged();
+    });
+  }
+
+  _onWindowsChanged() {
+    this.docks?.forEach((dock) => dock._onWindowsChanged());
   }
 
   _onMonitorsChanged() {

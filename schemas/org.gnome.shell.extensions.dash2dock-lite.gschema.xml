@@ -331,6 +331,11 @@
         <summary>Click minimizes focused app</summary>
         <description>Clicking the icon of the focused app minimizes its windows. Off: the click does nothing, as on macOS.</description>
     </key>
+    <key type="b" name="isolate-workspaces">
+        <default>false</default>
+        <summary>Isolate workspaces</summary>
+        <description>Running apps, running indicators and click/scroll window cycling only count windows on the active workspace, as in Ubuntu Dock.</description>
+    </key>
     <key type="b" name="apps-icon">
         <default>true</default>
         <summary>Apps icon</summary>
