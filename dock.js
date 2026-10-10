@@ -22,6 +22,7 @@ import { AutoHide } from './autohide.js';
 import { Animator } from './animator.js';
 import { live } from './probe.js';
 import { get_distance_sqr, get_distance, isInRect, isOverlapRect } from './utils.js';
+import { syncOpenAtLogin, hideOpenAtLogin } from './openAtLogin.js';
 
 const Point = Graphene.Point;
 
@@ -973,6 +974,19 @@ export let Dock = GObject.registerClass(
         if (c._grid) {
           // c._grid.style = noAnimation ? '' : 'background: none !important;';
           c._grid.style = 'background: none !important;';
+        }
+        if (c._appwell && !c._appwell._d2daMenuHooked) {
+          c._appwell._d2daMenuHooked = true;
+          // the AppMenu is created lazily on first open; the emitter owns
+          // this handler, so it goes away with the Shell's AppIcon
+          c._appwell.connect('menu-state-changed', (appwell, open) => {
+            if (!open) return;
+            if (this.extension.menu_open_at_login) {
+              syncOpenAtLogin(appwell);
+            } else {
+              hideOpenAtLogin(appwell);
+            }
+          });
         }
         if (c._appwell && !c._appwell._activate) {
           c._appwell._activate = c._appwell.activate;

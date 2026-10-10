@@ -174,6 +174,10 @@ export const SettingsKeys = (patch) => {
       widget_type: 'dropdown',
       test: { values: [0, 1, 2, 3, 4, 5] },
     },
+    'menu-open-at-login': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'apps-icon': {
       default_value: true,
       widget_type: 'switch',

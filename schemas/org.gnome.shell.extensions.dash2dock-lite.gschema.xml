@@ -346,6 +346,11 @@
         <summary>Recently closed apps</summary>
         <description>Most-recently-closed app ids, newest first; maintained by the extension while recent-apps-count is above 0.</description>
     </key>
+    <key type="b" name="menu-open-at-login">
+        <default>false</default>
+        <summary>Open at Login menu item</summary>
+        <description>Add an "Open at Login" switch to the app icon menu; it creates or removes ~/.config/autostart/APP.desktop.</description>
+    </key>
     <key type="b" name="apps-icon">
         <default>true</default>
         <summary>Apps icon</summary>

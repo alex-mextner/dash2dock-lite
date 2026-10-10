@@ -60,6 +60,18 @@
         </child>
         <child>
           <object class="AdwActionRow">
+            <property name="title" translatable="yes">Open at Login in Menu</property>
+            <property name="subtitle" translatable="yes">Add an "Open at Login" switch to the app icon menu (manages ~/.config/autostart).</property>
+            <property name="activatable-widget">menu-open-at-login</property>
+            <child>
+              <object class="GtkSwitch" id="menu-open-at-login">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
             <property name="title" translatable="yes">Apps Icon</property>
             <property name="subtitle" translatable="yes">Show the Overview Apps icon.</property>
             <property name="activatable-widget">apps-icon</property>
