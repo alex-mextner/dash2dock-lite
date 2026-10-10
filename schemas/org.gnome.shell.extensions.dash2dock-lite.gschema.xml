@@ -61,6 +61,11 @@
         <summary>Minimize into the app icon</summary>
         <description>Windows minimize into (and restore out of) their app's dock icon. Off: Shell animates them into the monitor's top-left corner.</description>
     </key>
+    <key type="i" name="minimize-effect">
+        <default>0</default>
+        <summary>Minimize effect</summary>
+        <description>How windows minimize and restore: 0 = Shell's scale animation, 1 = genie into the app's dock icon (GPU). The genie stands aside while the Magic Lamp extension is active.</description>
+    </key>
     <key type="b" name="autohide-dash">
         <default>false</default>
         <summary>Autohide dash panel</summary>

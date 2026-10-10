@@ -87,6 +87,7 @@ const REACTIONS = Object.freeze({
   'lamp-app-animation': ['compiz'],
   'minimize-to-icon': ['window_feedback'],
   'urgent-bounce': ['window_feedback'],
+  'minimize-effect': ['window_feedback'],
   'animation-fps': ['animation_fps'],
   'debug-visual': ['animate'],
   'mounted-icon': ['mounts', 'animate_refresh'],

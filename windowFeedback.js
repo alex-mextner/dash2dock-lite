@@ -14,14 +14,22 @@
 //   or is urgent, or its LauncherEntry is urgent via onAppAttention) and is
 //   not focused, its icon keeps bouncing and an autohidden dock stays shown,
 //   as on macOS. Focusing the app or the request ending stops it.
+// * minimize-effect: 1 = our GPU genie (effects/genie.js) into the same icon
+//   rect; left to the Magic Lamp extension whenever that one is active.
 
 import GLib from 'gi://GLib';
 import Mtk from 'gi://Mtk';
 import Shell from 'gi://Shell';
 
 import * as Fav from 'resource:///org/gnome/shell/ui/appFavorites.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import { ExtensionState } from 'resource:///org/gnome/shell/misc/extensionUtils.js';
 
 import { DockPosition } from './dock.js';
+import { Genie } from './effects/genie.js';
+
+const MAGIC_LAMP_UUID = 'compiz-alike-magic-lamp-effect@hermes83.github.com';
+const MINIMIZE_EFFECT_GENIE = 1;
 
 // A dock click bounces before Shell reports STARTING; a second trigger within
 // this window belongs to the same launch.
@@ -44,6 +52,7 @@ export class WindowFeedback {
     this._starting = new Set();
     // Shell.App -> { windows: Set<Meta.Window>, external, hops, sourceId }
     this._attention = new Map();
+    this._genie = new Genie((window) => this.iconTarget(window));
   }
 
   enable() {
@@ -62,12 +71,22 @@ export class WindowFeedback {
       () => this._onFocusWindow(),
       this
     );
+    // two minimize animations would fight over the window actor
+    Main.extensionManager.connectObject(
+      'extension-state-changed',
+      (manager, extension) => {
+        if (extension.uuid === MAGIC_LAMP_UUID) this._updateGenie();
+      },
+      this
+    );
     this.update();
   }
 
   disable() {
     Shell.AppSystem.get_default().disconnectObject(this);
     global.display.disconnectObject(this);
+    Main.extensionManager.disconnectObject(this);
+    this._genie.disable();
     this._starting.clear();
     this._endAllAttention();
     if (this._geometryIdleId) {
@@ -87,6 +106,19 @@ export class WindowFeedback {
     }
     if (!this._extension.urgent_bounce) {
       this._endAllAttention();
+    }
+    this._updateGenie();
+  }
+
+  _updateGenie() {
+    let lamp = Main.extensionManager.lookup(MAGIC_LAMP_UUID);
+    if (
+      this._extension.minimize_effect === MINIMIZE_EFFECT_GENIE &&
+      lamp?.state !== ExtensionState.ACTIVE
+    ) {
+      this._genie.enable();
+    } else {
+      this._genie.disable();
     }
   }
 

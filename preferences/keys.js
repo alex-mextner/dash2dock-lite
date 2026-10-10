@@ -71,6 +71,11 @@ export const SettingsKeys = (patch) => {
       default_value: false,
       widget_type: 'switch',
     },
+    'minimize-effect': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      test: { values: [0, 1] },
+    },
     'autohide-dash': {
       default_value: true,
       widget_type: 'switch',
