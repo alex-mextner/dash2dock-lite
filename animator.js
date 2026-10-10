@@ -890,20 +890,26 @@ export let Animator = class {
       let badge = this._badges[icon._idx];
       badge.hide();
       if (icon != dock._dragged) {
-        let appNotices = icon._appwell
-          ? dock.extension.services._appNotices[icon._appwell.app.get_id()]
-          : null;
-        let noticesCount = 0;
-        if (appNotices) {
-          noticesCount = appNotices.count;
-        }
-        // noticesCount = 1;
-        let target = dock.renderArea;
-        if (badge && noticesCount > 0) {
+        let services = dock.extension.services;
+        let appId = icon._appwell?.app.get_id();
+        let noticesCount = (appId && services._appNotices?.[appId]?.count) || 0;
+        // LauncherEntry count wins when the app shows one: apps like Telegram
+        // know their unread total better than the sum of their banners, and
+        // adding both would count each message twice.
+        let entry = appId ? services.launcherEntry(appId) : null;
+        if (entry?.countVisible) noticesCount = entry.count;
+        let progress = entry?.progressVisible ? entry.progress : -1;
+        let style =
+          dock.extension.notification_badge_style_options[
+            dock.extension.notification_badge_style
+          ] || 'default';
+        // 'default' is the "None" style: no actor for an invisible badge
+        if (style == 'default') noticesCount = 0;
+        if (badge && (noticesCount > 0 || progress >= 0)) {
           badge.update(icon, {
             noticesCount,
-            position: dock._position,
-            vertical,
+            progress,
+            style,
             extension: dock.extension,
             dock,
           });

@@ -5,6 +5,8 @@ import GObject from 'gi://GObject';
 import Clutter from 'gi://Clutter';
 import Cairo from 'gi://cairo';
 import St from 'gi://St';
+import Pango from 'gi://Pango';
+import PangoCairo from 'gi://PangoCairo';
 
 import { Drawing } from '../drawing.js';
 
@@ -55,6 +57,7 @@ const DotCanvas = GObject.registerClass(
       if (
         !this.state ||
         this.state.count != s.count ||
+        this.state.progress != s.progress ||
         this.state.color != s.color ||
         this.state.style != s.style ||
         this.state.rotate != s.rotate ||
@@ -78,12 +81,16 @@ const DotCanvas = GObject.registerClass(
 
       let size = width;
 
-      if (!this.state || !this.state.color || !this.state.count) return;
-
-      const dot_color = this.state.color;
-
       ctx.setOperator(Cairo.Operator.CLEAR);
       ctx.paint();
+
+      // progress >= 0 is a visible LauncherEntry progress bar; it may show
+      // without any count (a download with no unread badge)
+      let hasProgress = this.state?.progress >= 0;
+      if (!this.state || !this.state.color || (!this.state.count && !hasProgress)) {
+        ctx.$dispose();
+        return;
+      }
 
       ctx.setLineWidth(1);
       ctx.setLineCap(Cairo.LineCap.ROUND);
@@ -105,13 +112,81 @@ const DotCanvas = GObject.registerClass(
 
       // _draw_dot...
       let func = this[`_draw_${this.state.style}`];
-      if (typeof func === 'function') {
+      if (this.state.count && typeof func === 'function') {
         func.bind(this)(ctx, this.state);
       }
 
       ctx.restore();
 
+      if (hasProgress) {
+        ctx.setOperator(Cairo.Operator.OVER);
+        this._draw_progress(ctx, this.state.progress);
+      }
+
       ctx.$dispose();
+    }
+
+    // Rounded path from (x, y) with size w x h and corner radius r.
+    _roundedRect(ctx, x, y, w, h, r) {
+      ctx.newSubPath();
+      ctx.arc(x + w - r, y + r, r, -Math.PI / 2, 0);
+      ctx.arc(x + w - r, y + h - r, r, 0, Math.PI / 2);
+      ctx.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
+      ctx.arc(x + r, y + r, r, Math.PI, (3 * Math.PI) / 2);
+      ctx.closePath();
+    }
+
+    // macOS-style badge: a filled circle (pill for 2+ digits) with the count
+    // in the top-right corner; the caller does not translate this style.
+    _draw_count(ctx, state) {
+      let [size, _] = this.get_surface_size();
+      // OVER, not the caller's SOURCE: antialiased glyph edges must blend
+      // into the bubble instead of punching transparent holes into it
+      ctx.setOperator(Cairo.Operator.OVER);
+      let text = state.count > 99 ? '99+' : `${state.count}`;
+      let h = size * 0.36;
+
+      let layout = PangoCairo.create_layout(ctx);
+      let desc = Pango.FontDescription.from_string('Sans Bold');
+      desc.set_absolute_size(h * 0.66 * Pango.SCALE);
+      layout.set_font_description(desc);
+      layout.set_text(text, -1);
+      let [, logical] = layout.get_pixel_extents();
+
+      let w = Math.max(h, logical.width + h * 0.6);
+      let x = size - w;
+      let y = 0;
+      this._roundedRect(ctx, x, y, w, h, h / 2);
+      Drawing.set_color(ctx, state.color, state.color[3]);
+      ctx.fill();
+
+      // white text, unless the user picked a light bubble colour
+      let [r, g, b] = state.color;
+      let light = 0.299 * r + 0.587 * g + 0.114 * b > 0.65;
+      Drawing.set_color(ctx, light ? [0, 0, 0, 1] : [1, 1, 1, 1], 1);
+      ctx.moveTo(
+        x + (w - logical.width) / 2 - logical.x,
+        y + (h - logical.height) / 2 - logical.y
+      );
+      PangoCairo.show_layout(ctx, layout);
+    }
+
+    // LauncherEntry progress: dark rounded track with a light fill near the
+    // icon's bottom edge, readable on light and dark icons alike.
+    _draw_progress(ctx, progress) {
+      let [size, _] = this.get_surface_size();
+      let w = size * 0.72;
+      let h = size * 0.1;
+      let x = (size - w) / 2;
+      let y = size * 0.8;
+      this._roundedRect(ctx, x, y, w, h, h / 2);
+      Drawing.set_color(ctx, [0.1, 0.1, 0.1, 1], 0.7);
+      ctx.fill();
+      let inset = h * 0.15;
+      let fw = Math.max(h - 2 * inset, (w - 2 * inset) * progress);
+      this._roundedRect(ctx, x + inset, y + inset, fw, h - 2 * inset, (h - 2 * inset) / 2);
+      Drawing.set_color(ctx, [1, 1, 1, 1], 0.95);
+      ctx.fill();
     }
 
     _draw_segmented(ctx, state) {

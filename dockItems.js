@@ -221,6 +221,9 @@ export const DockItemDotsOverlay = GObject.registerClass(
   }
 );
 
+// shared, so the per-frame badge update allocates no array
+const BADGE_TRANSLATE = [0.35, -0.85];
+
 export const DockItemBadgeOverlay = GObject.registerClass(
   {},
   class DockItemBadgeOverlay extends DockItemOverlay {
@@ -233,7 +236,7 @@ export const DockItemBadgeOverlay = GObject.registerClass(
 
     update(icon, data) {
       let renderer = this.renderer;
-      let { noticesCount, position, vertical, extension, dock } = data;
+      let { noticesCount, progress, style, extension, dock } = data;
 
       let baseIconSize = dock._iconSizeScaledDown || icon._icon.width;
       renderer.width = baseIconSize;
@@ -245,9 +248,6 @@ export const DockItemBadgeOverlay = GObject.registerClass(
       canvasScale *= scale;
       renderer._canvas.set_scale(canvasScale, canvasScale);
 
-      let options = extension.notification_badge_style_options;
-      let notification_badge_style =
-        options[extension.notification_badge_style];
       let notification_badge_color = extension.notification_badge_color;
 
       // Dot canvas draws dots near the bottom (y = size - height, or +0.42*height from center).
@@ -257,10 +257,12 @@ export const DockItemBadgeOverlay = GObject.registerClass(
 
       renderer.set_state({
         count: noticesCount,
+        progress,
         color: notification_badge_color || [1, 1, 1, 1],
-        style: notification_badge_style || 'default',
+        style,
         size: extension.notification_badge_size || 0,
-        translate: [0.35, -0.85],
+        // the count bubble positions itself in the top-right corner
+        translate: style == 'count' ? null : BADGE_TRANSLATE,
       });
     }
   }

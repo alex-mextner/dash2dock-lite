@@ -381,6 +381,11 @@
         <summary>Notification badge</summary>
         <description>Customize the notification badge style.</description>
     </key>
+    <key type="b" name="launcher-api">
+        <default>false</default>
+        <summary>Unity LauncherEntry API</summary>
+        <description>Show the counts, progress bars and urgency apps publish through com.canonical.Unity.LauncherEntry.</description>
+    </key>
     <key type="i" name="notification-badge-size">
         <default>0</default>
         <summary>Notification badge size</summary>

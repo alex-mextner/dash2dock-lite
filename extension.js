@@ -60,6 +60,7 @@ const ACTION_ORDER = [
   'glass',
   'folder_stacks_setup',
   'mounts',
+  'launcher_api',
   'recents_debounce',
   'animation_fps',
   'autohide',
@@ -95,6 +96,7 @@ const REACTIONS = Object.freeze({
   'notification-badge-size': ['animate'],
   'notification-badge-color': ['animate'],
   'notification-badge-style': ['animate'],
+  'launcher-api': ['launcher_api', 'animate'],
   'running-indicator-size': ['animate'],
   'running-indicator-color': ['animate'],
   'running-indicator-style': ['animate'],
@@ -707,6 +709,7 @@ export default class Dash2DockLiteExt extends Extension {
         });
       },
       folder_stacks_setup: () => this.services?.setupFolderStacks(),
+      launcher_api: () => this.services?.setupLauncherEntries(),
       mounts: () => {
         this.services?.checkMounts();
         this.services?._commitMounts();
@@ -854,15 +857,6 @@ export default class Dash2DockLiteExt extends Extension {
       this
     );
 
-    Main.messageTray.connectObject(
-      'queue-changed',
-      (count) => {
-        this.services.checkNotifications();
-        this.animate();
-      },
-      this
-    );
-
     global.display.connectObject(
       'notify::focus-window',
       this._onFocusWindow.bind(this),
@@ -915,7 +909,6 @@ export default class Dash2DockLiteExt extends Extension {
     this._appFavorites.disconnectObject(this);
     this._appFavorites = null;
     Main.extensionManager.disconnectObject(this);
-    Main.messageTray.disconnectObject(this);
     Main.overview.disconnectObject(this);
     Main.layoutManager.disconnectObject(this);
     Main.sessionMode.disconnectObject(this);

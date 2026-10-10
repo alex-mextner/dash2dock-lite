@@ -541,6 +541,18 @@
         </child>
         <child>
           <object class="AdwActionRow">
+            <property name="title" translatable="yes">App Badges and Progress (Launcher API)</property>
+            <property name="subtitle" translatable="yes">Show unread counts, progress bars and urgency that apps such as Telegram, Thunderbird, VS Code or Chrome publish through the Unity LauncherEntry D-Bus API.</property>
+            <property name="activatable-widget">launcher-api</property>
+            <child>
+              <object class="GtkSwitch" id="launcher-api">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
             <property name="title" translatable="yes">Notification Badge Size</property>
             <property name="subtitle" translatable="yes">Set the notification badge size.</property>
             <property name="activatable-widget">notification-badge-size</property>
@@ -879,6 +891,7 @@
       <item translatable="yes">Square</item>
       <item translatable="yes">Triangle</item>
       <item translatable="yes">Diamond</item>
+      <item translatable="yes">Count (macOS)</item>
     </items>
   </object>
   <object class="GtkStringList" id="icon-effect-model">

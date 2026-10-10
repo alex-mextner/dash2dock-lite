@@ -11,6 +11,8 @@ import Graphene from 'gi://Graphene';
 
 import { Clock } from './apps/clock.js';
 import { Calendar } from './apps/calendar.js';
+import { LauncherEntries } from './launcherEntry.js';
+import Shell from 'gi://Shell';
 
 // sync with animator
 const CANVAS_SIZE = 120;
@@ -90,15 +92,10 @@ export const Services = class {
           // deferred stuff is required when .desktop entry if first created
           // check for deferred mounts
           this._commitMounts();
-
-          // notifications
-          this.checkNotifications();
         },
         0
       ),
     ];
-
-    this._disableNotifications = 0;
 
     this._deferredMounts = [];
     this._volumeMonitor = Gio.VolumeMonitor.get();
@@ -135,13 +132,19 @@ export const Services = class {
     //! ***services startup function are blocking calls. async these***
     this.checkTrash();
 
+    this._watchNotifications();
     this.checkNotifications();
+    this.setupLauncherEntries();
 
     this.checkMounts();
     this._commitMounts();
   }
 
   disable() {
+    this._unwatchNotifications();
+    this._appNotices = {};
+    this._launcherEntries?.destroy();
+    this._launcherEntries = null;
     this._cancellable?.cancel();
     this._cancellable = null;
     this._teardownFolderStacks();
@@ -367,70 +370,89 @@ export const Services = class {
     return appInfo;
   }
 
-  checkNotifications() {
-    if (this._disableNotifications > 4) return;
+  // Badge counts follow the message tray through signals: a source added or
+  // removed, and each source's GObject `count` property. Polling (the old 5 s
+  // ping) left badges stale for seconds and woke the CPU for nothing.
+  _watchNotifications() {
+    let tray = Main.messageTray;
+    tray.connectObject(
+      'source-added',
+      (t, source) => {
+        this._watchNotificationSource(source);
+        this.checkNotifications();
+      },
+      'source-removed',
+      () => this.checkNotifications(),
+      this
+    );
+    tray.getSources().forEach((s) => this._watchNotificationSource(s));
+  }
 
-    let sources = Main.messageTray.getSources();
-    this._appNotices = this._appNotices || {};
+  _watchNotificationSource(source) {
+    source.connectObject(
+      'notify::count',
+      () => this.checkNotifications(),
+      'notification-added',
+      () => this.checkNotifications(),
+      'notification-removed',
+      () => this.checkNotifications(),
+      this
+    );
+  }
 
-    Object.keys(this._appNotices).forEach((k) => {
-      this._appNotices[k].previous = this._appNotices[k].count;
-      this._appNotices[k].count = 0;
+  _unwatchNotifications() {
+    Main.messageTray.disconnectObject(this);
+    Main.messageTray
+      .getSources()
+      .forEach((s) => s.disconnectObject(this));
+  }
+
+  // `launcher-api` toggles the Unity LauncherEntry listener at runtime.
+  setupLauncherEntries() {
+    this._launcherEntries?.destroy();
+    this._launcherEntries = null;
+    if (!this.extension.launcher_api) return;
+    this._launcherEntries = new LauncherEntries((appId, entry, previous) => {
+      if (!!entry?.urgent != !!previous?.urgent) {
+        let app = Shell.AppSystem.get_default().lookup_app(appId);
+        // attention bounce lives with the urgent-window feature, if loaded
+        if (app) this.extension.onAppAttention?.(app, !!entry?.urgent);
+      }
+      this.extension.animate({ refresh: true });
     });
+  }
 
+  // Launcher state for an app id, or null when the API is off/unused.
+  launcherEntry(appId) {
+    return this._launcherEntries?.entries[appId] ?? null;
+  }
+
+  checkNotifications() {
     let app_map = {
       'org.gnome.Evolution-alarm-notify.desktop': 'org.gnome.Calendar.desktop',
     };
 
-    sources.forEach((source) => {
-      let appId = null;
-      if (source.app) {
-        appId = source.app.get_id();
-      }
-      if (!appId && source._app) {
-        appId = source._app.get_id();
-      }
-      if (!appId) {
-        appId = source._appId;
-      }
-      if (!appId) {
-        appId = '?';
-      }
-
-      // remap
+    // One app can own several sources (its fdo notifications plus the Shell's
+    // window-attention source); their counts add up, as on the macOS badge.
+    let notices = {};
+    Main.messageTray.getSources().forEach((source) => {
+      let appId =
+        source.app?.get_id() || source._app?.get_id() || source._appId || '?';
       appId = app_map[appId] || appId;
-
-      if (!this._appNotices[appId]) {
-        this._appNotices[appId] = {
-          count: 0,
-          previous: 0,
-          urgency: 0,
-          source: source,
-        };
-      }
-      this._appNotices[appId].count = source.count;
-      this._appNotices[`${appId}`] = this._appNotices[appId];
-      if (!appId.endsWith('desktop')) {
-        this._appNotices[`${appId}.desktop`] = this._appNotices[appId];
-      }
+      let count = source.count || 0;
+      if (count <= 0) return;
+      if (!appId.endsWith('.desktop')) appId = `${appId}.desktop`;
+      notices[appId] = notices[appId] || { count: 0 };
+      notices[appId].count += count;
     });
 
-    let hasUpdates = false;
-    Object.keys(this._appNotices).forEach((k) => {
-      if (this._appNotices[k].previous != this._appNotices[k].count) {
-        hasUpdates = true;
-      }
-    });
+    let old = this._appNotices || {};
+    let changed =
+      Object.keys(old).length != Object.keys(notices).length ||
+      Object.keys(notices).some((k) => old[k]?.count != notices[k].count);
+    this._appNotices = notices;
 
-    let update = {};
-    Object.keys(this._appNotices).forEach((k) => {
-      if (this._appNotices[k].count > 0) {
-        update[k] = this._appNotices[k];
-      }
-    });
-    this._appNotices = update;
-
-    if (hasUpdates) {
+    if (changed) {
       this.extension.animate({ refresh: true });
     }
   }
