@@ -76,6 +76,19 @@
         </child>
         <child>
           <object class="AdwActionRow">
+            <property name="title" translatable="yes">Trash Style</property>
+            <property name="subtitle" translatable="yes">Glass: a translucent bin showing what is inside — fill level, thumbnails and file types.</property>
+            <property name="activatable-widget">trash-style</property>
+            <child>
+              <object class="GtkDropDown" id="trash-style">
+                <property name="valign">center</property>
+                <property name="model">trash-style-model</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
             <property name="title" translatable="yes">Mounted Devices</property>
             <property name="subtitle" translatable="yes">Show mounted device icons to quickly open or unmount volumes.</property>
             <property name="activatable-widget">mounted-icon</property>
@@ -243,6 +256,12 @@
         </child>
       </object>
     </child>
+  </object>
+  <object class="GtkStringList" id="trash-style-model">
+    <items>
+      <item>Theme Icon</item>
+      <item>Glass</item>
+    </items>
   </object>
   <object class="GtkStringList" id="clock-style-model">
     <items>

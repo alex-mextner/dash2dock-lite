@@ -11,6 +11,7 @@ import Graphene from 'gi://Graphene';
 
 import { Clock } from './apps/clock.js';
 import { Calendar } from './apps/calendar.js';
+import { GlassTrash } from './apps/trash.js';
 
 // sync with animator
 const CANVAS_SIZE = 120;
@@ -106,6 +107,8 @@ export const Services = class {
     this._trashMonitor.connectObject(
       'changed',
       (fileMonitor, file, otherFile, eventType) => {
+        // the glass bin shows what is inside, so additions count too
+        this._debounceGlassTrash();
         switch (eventType) {
           case Gio.FileMonitorEvent.CHANGED:
           case Gio.FileMonitorEvent.CREATED:
@@ -128,6 +131,8 @@ export const Services = class {
 
     this.checkMounts();
     this._commitMounts();
+
+    this.updateTrashStyle();
   }
 
   disable() {
@@ -141,6 +146,10 @@ export const Services = class {
     this._trashMonitor?.disconnectObject(this);
     this._trashMonitor = null;
     this._trashDir = null;
+    this.extension._loTimer?.cancel(this._glassTrashSeq);
+    this._glassTrashSeq = null;
+    this._glassTrash?.destroy();
+    this._glassTrash = null;
     this.extension._loTimer?.cancel(this._debounceRecentsSeq);
     this._debounceRecentsSeq = null;
     this._mounts = {};
@@ -308,6 +317,36 @@ export const Services = class {
     let content = `[Desktop Entry]\nVersion=1.0\nTerminal=false\nType=Application\nName=Trash\nExec=${open_app} trash:///\nIcon=user-trash\nStartupWMClass=trash-dash2dock-lite\nActions=trash;\n\n[Desktop Action trash]\nName=Empty Trash\nExec=gio trash --empty\nTerminal=false\n`;
     this.trashApp = this._createAppInfoFromData(content);
     return this.trashApp;
+  }
+
+  // trash-style 1: the Trash item shows a glass bin with its real contents
+  updateTrashStyle() {
+    let glass = this.extension.trash_icon && this.extension.trash_style === 1;
+    if (!glass) {
+      this._glassTrash?.destroy();
+      this._glassTrash = null;
+      return;
+    }
+    if (!this._glassTrash) {
+      this._glassTrash = new GlassTrash(this.extension.path, () =>
+        this.extension.animate({ refresh: true })
+      );
+      this._glassTrash.render();
+    }
+  }
+
+  // trashing a folder of files fires one event per file: draw once after
+  _debounceGlassTrash() {
+    if (!this._glassTrash || !this.extension._loTimer) return;
+    if (!this._glassTrashSeq) {
+      this._glassTrashSeq = this.extension._loTimer.runDebounced(
+        () => this._glassTrash?.render(),
+        DEBOUNCE_CHECK_TIMEOUT,
+        'debounceGlassTrash'
+      );
+    } else {
+      this.extension._loTimer.runDebounced(this._glassTrashSeq);
+    }
   }
 
   // the stack's dock item; activating it opens the folder itself
@@ -480,6 +519,9 @@ export const Services = class {
       let prev = this.trashFull;
       this.trashFull = iter.next_file(this._cancellable ?? null) != null;
       if (prev != this.trashFull) {
+        // this also runs every 15s: a missed monitor event still redraws
+        // the glass bin, at least when it turns empty or full
+        this._debounceGlassTrash();
         this.extension.animate({ refresh: true });
       }
       return this.trashFull;
@@ -846,11 +888,35 @@ export const Services = class {
       return;
     }
     let icon = item._icon;
-    if (!icon || !icon.icon_name) {
+    if (!icon) {
       return;
     }
 
     let { scaleFactor, iconSize, dock } = settings;
+
+    // the glass trash; runs every frame, so only field compares unless the
+    // picture or the St.Icon (recreated on icon theme changes) is new
+    if (item === dock._trashIcon) {
+      let gicon = this._glassTrash?.gicon ?? null;
+      if (gicon) {
+        if (item._glassGicon !== gicon || item._glassIcon !== icon) {
+          icon.gicon = gicon;
+          item._glassGicon = gicon;
+          item._glassIcon = icon;
+        }
+        return;
+      }
+      if (item._glassGicon) {
+        // style switched back: hand the item back to the theme icon below
+        item._glassGicon = null;
+        item._glassIcon = null;
+        icon.icon_name = 'user-trash';
+      }
+    }
+
+    if (!icon.icon_name) {
+      return;
+    }
 
     // todo move dots and badges here?
 

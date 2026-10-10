@@ -196,6 +196,11 @@
         <summary>Show trash icon</summary>
         <description>Show a dynamic trash icon.</description>
     </key>
+    <key type="i" name="trash-style">
+        <default>0</default>
+        <summary>Trash icon style</summary>
+        <description>0: the icon theme's trash icon. 1: a translucent glass bin that shows what is in the Trash (fill level, thumbnails and file types).</description>
+    </key>
     <key type="b" name="downloads-icon">
         <default>false</default>
         <summary>Show downloads icon</summary>

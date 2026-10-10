@@ -59,6 +59,7 @@ const ACTION_ORDER = [
   'glass',
   'folder_stacks_setup',
   'mounts',
+  'trash_style',
   'recents_debounce',
   'animation_fps',
   'autohide',
@@ -157,7 +158,8 @@ const REACTIONS = Object.freeze({
   'pressure-sense': [],
   'downloads-icon': ['layout', 'animate_refresh'],
   'documents-icon': ['layout', 'animate_refresh'],
-  'trash-icon': ['layout', 'animate_refresh'],
+  'trash-icon': ['trash_style', 'layout', 'animate_refresh'],
+  'trash-style': ['trash_style', 'animate_refresh'],
 });
 
 export default class Dash2DockLiteExt extends Extension {
@@ -693,6 +695,7 @@ export default class Dash2DockLiteExt extends Extension {
         });
       },
       folder_stacks_setup: () => this.services?.setupFolderStacks(),
+      trash_style: () => this.services?.updateTrashStyle(),
       mounts: () => {
         this.services?.checkMounts();
         this.services?._commitMounts();

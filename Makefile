@@ -87,6 +87,7 @@ g44: build
 	cp ./README* ./build
 	cp ./stylesheet.css ./build
 	cp ./apps/recents.js ./build/apps
+	cp ./apps/trash-render.js ./build/apps
 	cp -r ./build/* ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/
 
 publish-g44: g44
