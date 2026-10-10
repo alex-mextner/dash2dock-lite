@@ -993,6 +993,21 @@ export let Dock = GObject.registerClass(
           icon._destroyConnectId = icon.connect('destroy', () => {
             this._cleanupIcon(c);
           });
+          // The icon (reactive above) sits in BaseIcon's St.Bin. If it still
+          // has the pointer while that bin is torn down, Clutter re-picks as
+          // it unmaps the icon, the button's hover flips, and
+          // BaseIcon.vfunc_style_changed, finding the bin child already
+          // cleared by StBin's dispose, adds a new icon to the bin inside its
+          // destroy_all_children: Clutter asserts and the shell aborts. The
+          // button's destroy handlers run while the bin is intact, so move
+          // the pointer off the icon there (dropped if the icon goes first).
+          c.child?.connectObject(
+            'destroy',
+            () => {
+              icon.reactive = false;
+            },
+            icon
+          );
         }
         let { _draggable } = c.child;
         if (_draggable && !_draggable._dragBeginId) {
