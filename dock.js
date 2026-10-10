@@ -975,13 +975,17 @@ export let Dock = GObject.registerClass(
                 if (!target._menu) {
                   this._maybeBounce(target);
                 }
-                this._maybeMinimizeOrMaximize(target._appwell.app, button);
+                if (this._maybeMinimizeOrMaximize(target._appwell.app, button)) {
+                  return;
+                }
                 return target._appwell._activate(button);
               }
               if (!c._menu) {
                 this._maybeBounce(c);
               }
-              this._maybeMinimizeOrMaximize(c._appwell.app, button);
+              if (this._maybeMinimizeOrMaximize(c._appwell.app, button)) {
+                return;
+              }
               return c._appwell._activate(button);
             } catch (e) {
               console.error('d2da: appwell activate', e);
@@ -1719,6 +1723,17 @@ export let Dock = GObject.registerClass(
         app.state == Shell.AppState.RUNNING &&
         (isCtrlPressed || isMiddleButton);
       if (openNewWindow) return;
+
+      // Ubuntu Dock opens another window on Shift+click; returning true tells
+      // the caller to skip the regular activate (which would just focus)
+      if (
+        shift &&
+        this.extension.shift_click_action === 1 &&
+        app.can_open_new_window()
+      ) {
+        app.open_new_window(-1);
+        return true;
+      }
 
       let workspaceManager = global.workspace_manager;
       let activeWs = workspaceManager.get_active_workspace();

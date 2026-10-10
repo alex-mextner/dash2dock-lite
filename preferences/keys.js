@@ -164,6 +164,11 @@ export const SettingsKeys = (patch) => {
       default_value: true,
       widget_type: 'switch',
     },
+    'shift-click-action': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      test: { values: [0, 1] },
+    },
     'apps-icon': {
       default_value: true,
       widget_type: 'switch',
