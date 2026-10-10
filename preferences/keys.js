@@ -53,6 +53,10 @@ export const SettingsKeys = (patch) => {
       key_maps: {},
       // test: { values: [0, 1] },
     },
+    'launch-bounce-anywhere': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'lamp-app-animation': {
       default_value: false,
       widget_type: 'switch',

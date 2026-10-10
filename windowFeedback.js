@@ -8,12 +8,20 @@
 //   Magic Lamp extension aim at that rect; without it they shrink the window
 //   into the monitor's top-left corner. The rect is refreshed when the dock
 //   settles after a change (Dock._endAnimation), never per frame.
+// * launch-bounce-anywhere: a pinned app bounces however it was launched
+//   (Super+N, app grid, a terminal), not only from a dock click.
 
 import GLib from 'gi://GLib';
 import Mtk from 'gi://Mtk';
 import Shell from 'gi://Shell';
 
+import * as Fav from 'resource:///org/gnome/shell/ui/appFavorites.js';
+
 import { DockPosition } from './dock.js';
+
+// A dock click bounces before Shell reports STARTING; a second trigger within
+// this window belongs to the same launch.
+const LAUNCH_BOUNCE_DEDUPE_MS = 1500;
 
 export class WindowFeedback {
   constructor(extension) {
@@ -22,14 +30,23 @@ export class WindowFeedback {
     // windows we gave an icon geometry, so turning the setting off (or
     // disabling) can clear exactly those
     this._geometryWindows = new Set();
+    // ids of apps seen STARTING: their RUNNING is the same launch
+    this._starting = new Set();
   }
 
   enable() {
     this._tracker = Shell.WindowTracker.get_default();
+    Shell.AppSystem.get_default().connectObject(
+      'app-state-changed',
+      (appSystem, app) => this._onAppStateChanged(app),
+      this
+    );
     this.update();
   }
 
   disable() {
+    Shell.AppSystem.get_default().disconnectObject(this);
+    this._starting.clear();
     if (this._geometryIdleId) {
       GLib.source_remove(this._geometryIdleId);
       this._geometryIdleId = 0;
@@ -56,6 +73,41 @@ export class WindowFeedback {
       this._updateIconGeometry();
       return GLib.SOURCE_REMOVE;
     });
+  }
+
+  _onAppStateChanged(app) {
+    let id = app.get_id();
+    switch (app.state) {
+      case Shell.AppState.STARTING:
+        this._starting.add(id);
+        this._launchBounce(app);
+        break;
+      case Shell.AppState.RUNNING:
+        // Launched outside the Shell (a terminal, another app): no STARTING,
+        // the app turns RUNNING when its first window maps.
+        if (!this._starting.delete(id)) this._launchBounce(app);
+        break;
+      default:
+        this._starting.delete(id);
+    }
+  }
+
+  // Bounce honours open-app-animation like a dock click does. Only pinned
+  // apps: an unpinned app gets a new icon, which already bounces as it
+  // appears (animator.js).
+  _launchBounce(app) {
+    let ext = this._extension;
+    if (!ext.launch_bounce_anywhere || !ext.open_app_animation) return;
+    if (!Fav.getAppFavorites().isFavorite(app.get_id())) return;
+    let now = Date.now();
+    for (let dock of ext.docks ?? []) {
+      let icons = dock._icons ?? dock._findIcons();
+      let container = icons.find((c) => c._appwell?.app === app);
+      if (!container) continue;
+      if (now - (container._appwell._bounceAt ?? 0) < LAUNCH_BOUNCE_DEDUPE_MS)
+        continue;
+      dock._maybeBounce(container, true);
+    }
   }
 
   // The on-screen rect (stage px) of the app's icon at rest and the dock

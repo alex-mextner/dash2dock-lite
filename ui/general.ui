@@ -118,6 +118,18 @@
           </object>
         </child>
         <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Bounce On Any Launch</property>
+            <property name="subtitle" translatable="yes">With the opening animation on, pinned apps also bounce when launched from the keyboard, the app grid or a terminal.</property>
+            <property name="activatable-widget">launch-bounce-anywhere</property>
+            <child>
+              <object class="GtkSwitch" id="launch-bounce-anywhere">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
           <object class="AdwActionRow" id="lamp-app-animation-row">
             <property name="visible">true</property>
             <property name="title" translatable="yes">Lamp Animation</property>

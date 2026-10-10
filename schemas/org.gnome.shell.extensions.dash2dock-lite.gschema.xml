@@ -41,6 +41,11 @@
         <summary>Open app animation</summary>
         <description>Open app animation.</description>
     </key>
+    <key type="b" name="launch-bounce-anywhere">
+        <default>false</default>
+        <summary>Bounce on launch from anywhere</summary>
+        <description>With the opening animation on, a pinned app's icon also bounces when the app is launched outside the dock (Super+number, app grid, a terminal).</description>
+    </key>
     <key type="b" name="lamp-app-animation">
         <default>false</default>
         <summary>Minimize app lamp animation</summary>

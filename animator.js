@@ -1145,6 +1145,9 @@ export let Animator = class {
   bounceIcon(appwell) {
     let dock = this.dock;
     let app_id = Compat.getAppId(appwell);
+    // lets other triggers for the same launch (dock click, then the app's
+    // STARTING state) tell that a bounce is already under way
+    appwell._bounceAt = Date.now();
 
     // let scaleFactor = dock.getMonitor().geometry_scale;
     //! why not scaleFactor?
