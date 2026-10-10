@@ -16,6 +16,18 @@ import { Calendar } from './apps/calendar.js';
 const CANVAS_SIZE = 120;
 const DEBOUNCE_CHECK_TIMEOUT = 750;
 
+// Directory monitor or null: Gio.File.monitor() throws ("Unable to find
+// default local file monitor type") once inotify instances run out, and that
+// must not abort the whole extension enable.
+function watchDir(file, label) {
+  try {
+    return file.monitor(Gio.FileMonitorFlags.WATCH_MOVES, null);
+  } catch (e) {
+    console.warn(`d2da: ${label}: not watched: ${e.message}`);
+    return null;
+  }
+}
+
 class ServiceCounter {
   constructor(name, interval, callback, advance) {
     advance = advance || 0;
@@ -99,11 +111,10 @@ export const Services = class {
     );
 
     this._trashDir = Gio.File.new_for_uri('trash:///');
-    this._trashMonitor = this._trashDir.monitor(
-      Gio.FileMonitorFlags.WATCH_MOVES,
-      null
-    );
-    this._trashMonitor.connectObject(
+    // monitor() throws when the inotify instance limit is exhausted; the
+    // trash icon then only refreshes on explicit checkTrash() calls.
+    this._trashMonitor = watchDir(this._trashDir, 'trash');
+    this._trashMonitor?.connectObject(
       'changed',
       (fileMonitor, file, otherFile, eventType) => {
         switch (eventType) {
@@ -201,11 +212,12 @@ export const Services = class {
         stack.icon,
         stack.path
       );
-      stack.monitor = Gio.File.new_for_path(stack.path).monitor(
-        Gio.FileMonitorFlags.WATCH_MOVES,
-        null
+      // Unwatched stacks still list their files on open via prepare().
+      stack.monitor = watchDir(
+        Gio.File.new_for_path(stack.path),
+        `folder stack ${stack.path}`
       );
-      stack.monitor.connectObject(
+      stack.monitor?.connectObject(
         'changed',
         (fileMonitor, file, otherFile, eventType) => {
           switch (eventType) {
