@@ -164,6 +164,10 @@ export const SettingsKeys = (patch) => {
       default_value: true,
       widget_type: 'switch',
     },
+    'toggle-autohide-shortcut': {
+      default_value: [],
+      widget_type: 'strv',
+    },
     'apps-icon': {
       default_value: true,
       widget_type: 'switch',

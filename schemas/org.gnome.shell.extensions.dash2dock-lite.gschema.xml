@@ -331,6 +331,11 @@
         <summary>Click minimizes focused app</summary>
         <description>Clicking the icon of the focused app minimizes its windows. Off: the click does nothing, as on macOS.</description>
     </key>
+    <key type="as" name="toggle-autohide-shortcut">
+        <default>[]</default>
+        <summary>Toggle autohide shortcut</summary>
+        <description>Keyboard shortcut that turns dock hiding on and off (macOS: Option-Command-D, here &lt;Super&gt;&lt;Alt&gt;d).</description>
+    </key>
     <key type="b" name="apps-icon">
         <default>true</default>
         <summary>Apps icon</summary>

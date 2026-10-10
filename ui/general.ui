@@ -173,6 +173,11 @@
           </object>
         </child>
         <child>
+          <object class="AdwEntryRow" id="toggle-autohide-shortcut">
+            <property name="title" translatable="yes">Toggle Hiding Shortcut (e.g. &lt;Super&gt;&lt;Alt&gt;d, comma-separated)</property>
+          </object>
+        </child>
+        <child>
           <object class="AdwActionRow" id="peek-hidden-icons-row">
             <property name="visible">true</property>
             <property name="title" translatable="yes">Peek Icons</property>

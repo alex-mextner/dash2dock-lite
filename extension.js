@@ -24,6 +24,7 @@ import * as Fav from 'resource:///org/gnome/shell/ui/appFavorites.js';
 
 import St from 'gi://St';
 import Shell from 'gi://Shell';
+import Meta from 'gi://Meta';
 import Graphene from 'gi://Graphene';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -775,6 +776,18 @@ export default class Dash2DockLiteExt extends Extension {
   }
 
   _addEvents() {
+    // macOS ⌥⌘D. Mutter re-reads the accelerators from the key itself, so the
+    // default [] binds nothing and a later change needs no re-registration.
+    Main.wm.addKeybinding(
+      'toggle-autohide-shortcut',
+      this._settings,
+      Meta.KeyBindingFlags.NONE,
+      Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+      () => {
+        this._settings.set_boolean('autohide-dash', !this.autohide_dash);
+      }
+    );
+
     this._appSystem = Shell.AppSystem.get_default();
 
     this._appSystem.connectObject(
@@ -910,6 +923,7 @@ export default class Dash2DockLiteExt extends Extension {
   }
 
   _removeEvents() {
+    Main.wm.removeKeybinding('toggle-autohide-shortcut');
     this._appSystem.disconnectObject(this);
     this._appSystem = null;
     this._appFavorites.disconnectObject(this);
