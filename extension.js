@@ -39,6 +39,7 @@ import { runTests } from './diagnostics.js';
 import { probe, applySmokeSettings } from './probe.js';
 import * as Compat from './compat.js';
 import { WallpaperTone, markColors } from './contrast.js';
+import { FileDrops } from './fileDrops.js';
 
 import {
   Extension,
@@ -60,6 +61,7 @@ const ACTION_ORDER = [
   'glass',
   'folder_stacks_setup',
   'mounts',
+  'file_drops',
   'recents_debounce',
   'animation_fps',
   'autohide',
@@ -169,6 +171,7 @@ const REACTIONS = Object.freeze({
   'downloads-icon': ['layout', 'animate_refresh'],
   'documents-icon': ['layout', 'animate_refresh'],
   'trash-icon': ['layout', 'animate_refresh'],
+  'file-drops': ['file_drops'],
 });
 
 export default class Dash2DockLiteExt extends Extension {
@@ -346,6 +349,7 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateContrastColors();
     this._updateStyle();
     this._updateBlurredBackground();
+    this._updateFileDrops();
 
     this._addEvents();
     this._queryDisplay();
@@ -380,6 +384,7 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateAutohide(true);
     this._unloadConfig();
     this._updateContrast(true);
+    this._updateFileDrops(true);
 
     this._showMainOverviewDash(true);
 
@@ -707,6 +712,7 @@ export default class Dash2DockLiteExt extends Extension {
         });
       },
       folder_stacks_setup: () => this.services?.setupFolderStacks(),
+      file_drops: () => this._updateFileDrops(),
       mounts: () => {
         this.services?.checkMounts();
         this.services?._commitMounts();
@@ -1118,6 +1124,26 @@ export default class Dash2DockLiteExt extends Extension {
       );
     } else {
       this._hiTimer.runDebounced(this._debounceStyleSeq);
+    }
+  }
+
+  // Owns the file-drop helper process while file-drops is on.
+  _updateFileDrops(disable) {
+    if (disable || !this.file_drops) {
+      this._fileDrops?.disable();
+      this._fileDrops = null;
+      return;
+    }
+    if (!this._fileDrops) {
+      // an optional extra: a failure here must not take the dock down
+      try {
+        this._fileDrops = new FileDrops(this);
+        this._fileDrops.enable();
+      } catch (err) {
+        console.error('d2da: file-drops', err);
+        this._fileDrops?.disable();
+        this._fileDrops = null;
+      }
     }
   }
 

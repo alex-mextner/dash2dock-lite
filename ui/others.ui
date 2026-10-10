@@ -111,6 +111,18 @@
           </object>
         </child>
         <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">File Drops</property>
+            <property name="subtitle" translatable="yes">Drop files from Files or any app onto the dock: Trash moves them to the trash, an app opens them, a folder stack or drive moves or copies them there, as on macOS. Runs a small helper process.</property>
+            <property name="activatable-widget">file-drops</property>
+            <child>
+              <object class="GtkSwitch" id="file-drops">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
           <object class="AdwActionRow" id="downloads-folder-row">
             <property name="visible">true</property>
             <property name="title" translatable="yes"/>

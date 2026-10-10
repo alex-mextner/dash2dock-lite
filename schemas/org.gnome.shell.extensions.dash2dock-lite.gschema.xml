@@ -241,6 +241,11 @@
         <summary>Show mounted device icons</summary>
         <description>Show a mounted device icon.</description>
     </key>
+    <key type="b" name="file-drops">
+        <default>false</default>
+        <summary>File drops</summary>
+        <description>Accept files dragged onto the dock: Trash moves them to the trash, an app opens them, a folder stack or mounted drive moves or copies them there, as in the macOS Dock. Runs a small GTK helper process that receives the drop.</description>
+    </key>
     <key type="b" name="clock-icon">
         <default>false</default>
         <summary>Dynamic clock</summary>

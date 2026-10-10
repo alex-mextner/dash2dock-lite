@@ -209,6 +209,10 @@ export const SettingsKeys = (patch) => {
       default_value: false,
       widget_type: 'switch',
     },
+    'file-drops': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'clock-icon': {
       default_value: false,
       widget_type: 'switch',
