@@ -130,6 +130,18 @@
             </child>
           </object>
         </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Minimize Into App Icon</property>
+            <property name="subtitle" translatable="yes">Windows shrink into their app's dock icon when minimized and grow out of it when restored.</property>
+            <property name="activatable-widget">minimize-to-icon</property>
+            <child>
+              <object class="GtkSwitch" id="minimize-to-icon">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
       </object>
     </child>
     <child>

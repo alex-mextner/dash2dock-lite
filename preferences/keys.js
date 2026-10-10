@@ -59,6 +59,10 @@ export const SettingsKeys = (patch) => {
       key_maps: {},
       // test: { values: [0, 1] },
     },
+    'minimize-to-icon': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'autohide-dash': {
       default_value: true,
       widget_type: 'switch',

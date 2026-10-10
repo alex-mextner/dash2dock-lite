@@ -1624,6 +1624,8 @@ export let Dock = GObject.registerClass(
       }
 
       this._updateFocusedIcon();
+      // icons are at rest now: the minimize target can be measured
+      this.extension.windowFeedback?.queueIconGeometry();
 
       if (this.extension._hiTimer) {
         this.extension._hiTimer.cancel(this._animationSeq);

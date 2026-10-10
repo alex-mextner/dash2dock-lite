@@ -46,6 +46,11 @@
         <summary>Minimize app lamp animation</summary>
         <description>Minimize app genie on a lamp animation.</description>
     </key>
+    <key type="b" name="minimize-to-icon">
+        <default>false</default>
+        <summary>Minimize into the app icon</summary>
+        <description>Windows minimize into (and restore out of) their app's dock icon. Off: Shell animates them into the monitor's top-left corner.</description>
+    </key>
     <key type="b" name="autohide-dash">
         <default>false</default>
         <summary>Autohide dash panel</summary>

@@ -35,6 +35,7 @@ import { Dock } from './dock.js';
 import { Services } from './services.js';
 import { Integrations } from './integrations.js';
 import { WindowTracker } from './windowTracker.js';
+import { WindowFeedback } from './windowFeedback.js';
 import { runTests } from './diagnostics.js';
 import { probe, applySmokeSettings } from './probe.js';
 import * as Compat from './compat.js';
@@ -79,10 +80,12 @@ const ACTION_ORDER = [
   'animate_refresh',
   'animate_preview',
   'animate',
+  'window_feedback',
 ];
 
 const REACTIONS = Object.freeze({
   'lamp-app-animation': ['compiz'],
+  'minimize-to-icon': ['window_feedback'],
   'animation-fps': ['animation_fps'],
   'debug-visual': ['animate'],
   'mounted-icon': ['mounts', 'animate_refresh'],
@@ -336,6 +339,9 @@ export default class Dash2DockLiteExt extends Extension {
     this._lastServicesUpdate = 0;
     this._onCheckServices();
 
+    this.windowFeedback = new WindowFeedback(this);
+    this.windowFeedback.enable();
+
     // after integrations/services exist: the settings switch uses them
     applySmokeSettings(this._settings);
 
@@ -382,6 +388,9 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateContrast(true);
 
     this._showMainOverviewDash(true);
+
+    this.windowFeedback?.disable();
+    this.windowFeedback = null;
 
     this.destroyDocks();
     this.docks = [];
@@ -743,6 +752,7 @@ export default class Dash2DockLiteExt extends Extension {
         if (this.animate_icons) this.animate({ preview: true });
       },
       animate: () => this.animate(),
+      window_feedback: () => this.windowFeedback?.update(),
     };
 
     for (const action of ACTION_ORDER) {
