@@ -15,6 +15,7 @@ import { Dash } from 'resource:///org/gnome/shell/ui/dash.js';
 import { TintEffect } from './effects/tint_effect.js';
 import { MonochromeEffect } from './effects/monochrome_effect.js';
 import { GlassPlatter } from './effects/glass.js';
+import { DockInteractions } from './interactions.js';
 
 import { DockIcon, DockItemContainer, DockBackground } from './dockItems.js';
 import { DockItemList } from './dockItemMenu.js';
@@ -126,6 +127,8 @@ export let Dock = GObject.registerClass(
         this.autohider.enable();
       }
 
+      this.interactions = new DockInteractions(this);
+
       this.struts = new St.Widget({
         name: 'DockStruts',
         offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
@@ -160,6 +163,9 @@ export let Dock = GObject.registerClass(
 
         this._glass?.destroy();
         this._glass = null;
+
+        this.interactions.destroy();
+        this.interactions = null;
 
         this.autohider.disable();
         this.autohider.dock = null;
@@ -274,7 +280,11 @@ export let Dock = GObject.registerClass(
       this._debounceBeginAnimateSeq = null;
     }
 
-    _onButtonPressEvent(evt) {
+    // connectObject handlers receive (actor, event)
+    _onButtonPressEvent(actor, evt) {
+      if (this.interactions?.handleButtonPress(evt)) {
+        return Clutter.EVENT_STOP;
+      }
       return Clutter.EVENT_PROPAGATE;
     }
 
@@ -999,8 +1009,10 @@ export let Dock = GObject.registerClass(
           _draggable._dragBeginId = _draggable.connect('drag-begin', () => {
             this._dragging = true;
             this._dragged = icon;
+            this.interactions?.beginIconDrag(c.child.app);
           });
           _draggable._dragEndId = _draggable.connect('drag-end', () => {
+            this.interactions?.endIconDrag();
             this._dragging = false;
             this._icons = null;
             this._needsLayout = true;

@@ -29,3 +29,20 @@
 #dash .dash-item-container {
   /*border: 2px solid magenta;*/
 }
+
+/* drag-off-remove: label that follows the pointer outside the dock */
+.d2da-remove-label {
+  color: #fff;
+  background-color: rgba(30, 30, 30, 0.85);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-weight: bold;
+}
+
+/* drag-off-remove: smoke puffs of the poof */
+.d2da-poof-puff {
+  /* light grey with a dark rim so the smoke reads on white windows too */
+  background-color: rgba(215, 215, 215, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 12px;
+}

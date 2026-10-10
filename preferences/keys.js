@@ -164,6 +164,18 @@ export const SettingsKeys = (patch) => {
       default_value: true,
       widget_type: 'switch',
     },
+    'drag-off-remove': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'background-menu': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'spring-loading': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'toggle-autohide-shortcut': {
       default_value: [],
       widget_type: 'strv',

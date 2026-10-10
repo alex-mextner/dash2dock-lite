@@ -331,6 +331,21 @@
         <summary>Click minimizes focused app</summary>
         <description>Clicking the icon of the focused app minimizes its windows. Off: the click does nothing, as on macOS.</description>
     </key>
+    <key type="b" name="drag-off-remove">
+        <default>false</default>
+        <summary>Drag icons off the dock to remove them</summary>
+        <description>Dragging a pinned app icon away from the dock shows "Remove"; dropping it there unpins the app with a poof, as on macOS.</description>
+    </key>
+    <key type="b" name="background-menu">
+        <default>false</default>
+        <summary>Dock background menu</summary>
+        <description>Right-clicking the dock background or separator opens a menu with Hiding, Magnification, Position on Screen and Dock Settings, as on macOS.</description>
+    </key>
+    <key type="b" name="spring-loading">
+        <default>false</default>
+        <summary>Spring-loaded icons</summary>
+        <description>While dragging files, an autohidden dock is revealed, and holding the files over an app icon for a second brings that app forward, as on macOS.</description>
+    </key>
     <key type="as" name="toggle-autohide-shortcut">
         <default>[]</default>
         <summary>Toggle autohide shortcut</summary>

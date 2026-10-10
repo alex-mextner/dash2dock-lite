@@ -173,6 +173,11 @@ export let AutoHide = class {
     if (this.extension._inOverview) {
       return false;
     }
+    // spring-loading revealed the dock for a file drag: keep it up until
+    // the drag ends, even while the pointer is over a window
+    if (this.dock.interactions?.xdndActive) {
+      return false;
+    }
     let pointer = global.get_pointer();
     if (this.extension.simulated_pointer) {
       pointer = [...this.extension.simulated_pointer];
