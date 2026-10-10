@@ -161,6 +161,18 @@
             </child>
           </object>
         </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Adaptive Contrast</property>
+            <property name="subtitle" translatable="yes">Apps grid icon, separators and running indicators follow the wallpaper under the dock: light over dark, dark over light. Overrides Separator Color (keeping its opacity) and Indicator Color.</property>
+            <property name="activatable-widget">adaptive-contrast</property>
+            <child>
+              <object class="GtkSwitch" id="adaptive-contrast">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
       </object>
     </child>
     <child>

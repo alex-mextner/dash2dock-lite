@@ -156,6 +156,11 @@
         <summary>Separator color</summary>
         <description>Set dock separator color.</description>
     </key>
+    <key type="b" name="adaptive-contrast">
+        <default>false</default>
+        <summary>Adaptive contrast</summary>
+        <description>Apps grid icon, separators and running indicators turn light over a dark wallpaper and dark over a light one. Overrides Separator Color (keeping its opacity) and Indicator Color.</description>
+    </key>
     <key type="d" name="icon-border-radius">
         <default>3</default>
         <summary>Border radius</summary>

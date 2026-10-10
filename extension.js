@@ -38,6 +38,7 @@ import { WindowTracker } from './windowTracker.js';
 import { runTests } from './diagnostics.js';
 import { probe, applySmokeSettings } from './probe.js';
 import * as Compat from './compat.js';
+import { WallpaperTone, markColors } from './contrast.js';
 
 import {
   Extension,
@@ -67,6 +68,8 @@ const ACTION_ORDER = [
   'shrink',
   'icon_resolution',
   'icon_spacing',
+  'contrast',
+  'contrast_colors',
   'widget_style',
   'debounced_style',
   'style',
@@ -105,7 +108,7 @@ const REACTIONS = Object.freeze({
   'favorites-only': ['layout', 'animate_refresh'],
   'downloads-path': ['folder_stacks_setup', 'layout', 'animate_refresh'],
   'folder-stacks': ['folder_stacks_setup', 'layout', 'animate_refresh'],
-  'dock-location': ['layout', 'recreate_docks', 'animate_preview'],
+  'dock-location': ['contrast', 'layout', 'recreate_docks', 'animate_preview'],
   'icon-resolution': [
     'icon_resolution',
     'style',
@@ -130,7 +133,7 @@ const REACTIONS = Object.freeze({
   'icon-border-thickness': ['style', 'layout', 'animate'],
   'icon-border-radius': ['style', 'layout', 'animate'],
   'icon-background-color': ['style', 'layout', 'animate'],
-  'separator-color': ['style', 'layout', 'animate'],
+  'separator-color': ['contrast_colors', 'style', 'layout', 'animate'],
   'border-color': ['style', 'layout', 'animate'],
   'border-thickness': ['style', 'layout', 'animate'],
   'customize-topbar': ['style', 'layout', 'animate'],
@@ -146,7 +149,15 @@ const REACTIONS = Object.freeze({
   'label-background-color': ['style', 'layout', 'animate'],
   'label-foreground-color': ['style', 'layout', 'animate'],
   'panel-mode': ['style', 'layout', 'animate'],
-  'background-color': ['bms', 'blurred_bg', 'style', 'layout', 'animate'],
+  'background-color': [
+    'bms',
+    'blurred_bg',
+    'contrast_colors',
+    'style',
+    'layout',
+    'animate',
+  ],
+  'adaptive-contrast': ['contrast', 'contrast_colors', 'style', 'animate'],
   'blur-resolution': ['bms', 'blurred_bg', 'style', 'layout', 'animate'],
   'blur-background': ['bms', 'blurred_bg', 'style', 'layout', 'animate'],
   'glass-material': ['bms', 'glass', 'style', 'layout', 'animate'],
@@ -331,6 +342,8 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateAnimationFPS();
     this._updateShrink();
     this._updateIconResolution();
+    this._updateContrast();
+    this._updateContrastColors();
     this._updateStyle();
     this._updateBlurredBackground();
 
@@ -366,6 +379,7 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateLayout(true);
     this._updateAutohide(true);
     this._unloadConfig();
+    this._updateContrast(true);
 
     this._showMainOverviewDash(true);
 
@@ -708,6 +722,8 @@ export default class Dash2DockLiteExt extends Extension {
       shrink: () => this._updateShrink(),
       icon_resolution: () => this._updateIconResolution(),
       icon_spacing: () => this._updateIconSpacing(),
+      contrast: () => this._updateContrast(),
+      contrast_colors: () => this._updateContrastColors(),
       widget_style: () => this._updateWidgetStyle(),
       debounced_style: () => this._debouncedUpdateStyle(),
       style: () => this._updateStyle(),
@@ -1105,6 +1121,40 @@ export default class Dash2DockLiteExt extends Extension {
     }
   }
 
+  // Owns the wallpaper sampler while adaptive-contrast is on. The sampler
+  // reports asynchronously; colours are derived and restyled from that
+  // callback, never from the animation loop.
+  _updateContrast(disable) {
+    if (disable || !this.adaptive_contrast) {
+      this._wallpaperTone?.destroy();
+      this._wallpaperTone = null;
+      this.contrast_colors = null;
+      return;
+    }
+    if (!this._wallpaperTone) {
+      try {
+        this._wallpaperTone = new WallpaperTone(() => {
+          this._queueReactions(['contrast_colors', 'style', 'animate']);
+        });
+      } catch (err) {
+        console.error('d2da: adaptive contrast', err);
+        return;
+      }
+    }
+    const positions = ['bottom', 'left', 'right', 'top'];
+    this._wallpaperTone.setPosition(positions[this.dock_location] ?? 'bottom');
+  }
+
+  // null keeps the fixed separator/indicator colours (off, or the wallpaper
+  // could not be read). One object per wallpaper/setting change: the dot
+  // renderer compares colours by reference, so it repaints only then.
+  _updateContrastColors() {
+    let rgb = this.adaptive_contrast ? this._wallpaperTone?.rgb : null;
+    this.contrast_colors = rgb
+      ? markColors(rgb, this.background_color, this.separator_color?.[3])
+      : null;
+  }
+
   _updateStyle(disable) {
     let styles = [];
 
@@ -1225,8 +1275,19 @@ export default class Dash2DockLiteExt extends Extension {
     }
 
     if (this.separator_thickness) {
-      let rgba = this._style.rgba(this.separator_color);
+      let rgba = this._style.rgba(
+        this.contrast_colors?.separator ?? this.separator_color
+      );
       styles.push(`.dash-separator { background-color: rgba(${rgba}); }`);
+    }
+
+    // Dock icons are drawn by renderer St.Icons in the render area, which
+    // inherit the stage's dark default foreground; symbolic ones (the Apps
+    // grid) take that colour. Only overridden when adaptive, so the theme's
+    // look is untouched otherwise.
+    if (this.contrast_colors) {
+      let rgba = this._style.rgba(this.contrast_colors.icon);
+      styles.push(`#DockRenderArea #d2daIcon { color: rgba(${rgba}); }`);
     }
 
     this._style.build('custom-d2dl', styles);

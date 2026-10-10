@@ -201,7 +201,8 @@ export const DockItemDotsOverlay = GObject.registerClass(
 
       let options = extension.running_indicator_style_options;
       let running_indicator_style = options[extension.running_indicator_style];
-      let running_indicator_color = extension.running_indicator_color;
+      let running_indicator_color =
+        extension.contrast_colors?.indicator ?? extension.running_indicator_color;
 
       renderer.set_state({
         count: appCount,

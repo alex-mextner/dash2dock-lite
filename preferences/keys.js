@@ -306,6 +306,10 @@ export const SettingsKeys = (patch) => {
       widget_type: 'color',
       themed: true,
     },
+    'adaptive-contrast': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'icon-border-radius': {
       default_value: 0,
       widget_type: 'scale',
