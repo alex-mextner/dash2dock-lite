@@ -356,6 +356,11 @@
         <summary>Keyboard focus into the dock</summary>
         <description>List the dock as "Dock" in Ctrl+Alt+Tab; selecting it reveals the dock and highlights the focused icon (arrows move, Enter opens).</description>
     </key>
+    <key type="b" name="hotkeys-overlay">
+        <default>false</default>
+        <summary>Number overlay while holding Super</summary>
+        <description>While Super is held for about half a second, show the numbers 1-9 of Super+N on the first nine app icons.</description>
+    </key>
     <key type="b" name="apps-icon">
         <default>true</default>
         <summary>Apps icon</summary>

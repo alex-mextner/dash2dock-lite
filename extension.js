@@ -39,6 +39,7 @@ import { runTests } from './diagnostics.js';
 import { probe, applySmokeSettings } from './probe.js';
 import * as Compat from './compat.js';
 import { WallpaperTone, markColors } from './contrast.js';
+import { HotkeysOverlay } from './hotkeysOverlay.js';
 
 import {
   Extension,
@@ -67,6 +68,7 @@ const ACTION_ORDER = [
   'recents_debounce',
   'recent_apps',
   'keyboard_focus',
+  'hotkeys_overlay',
   'animation_fps',
   'autohide',
   'multi_monitor',
@@ -113,6 +115,7 @@ const REACTIONS = Object.freeze({
   'clock-icon': ['layout', 'animate_refresh'],
   'favorites-only': ['layout', 'animate_refresh'],
   'keyboard-focus': ['keyboard_focus'],
+  'hotkeys-overlay': ['hotkeys_overlay'],
   'recent-apps-count': ['recent_apps', 'layout', 'animate_refresh'],
   'downloads-path': ['folder_stacks_setup', 'layout', 'animate_refresh'],
   'folder-stacks': ['folder_stacks_setup', 'layout', 'animate_refresh'],
@@ -356,6 +359,7 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateBlurredBackground();
 
     this._addEvents();
+    this._updateHotkeysOverlay();
     this._queryDisplay();
     // this.startUp();
 
@@ -381,6 +385,8 @@ export default class Dash2DockLiteExt extends Extension {
     // null later
 
     this._removeEvents();
+    this._hotkeysOverlay?.destroy();
+    this._hotkeysOverlay = null;
     this._disableSettings();
 
     this._updateShrink(true);
@@ -729,6 +735,7 @@ export default class Dash2DockLiteExt extends Extension {
       keyboard_focus: () => {
         this.docks?.forEach((dock) => dock._updateKeyboardFocus());
       },
+      hotkeys_overlay: () => this._updateHotkeysOverlay(),
       animation_fps: () => this._updateAnimationFPS(),
       autohide: () => this._updateAutohide(),
       multi_monitor: () => this._updateMultiMonitorPreference(),
@@ -922,6 +929,15 @@ export default class Dash2DockLiteExt extends Extension {
       SERVICES_UPDATE_INTERVAL,
       'services'
     );
+  }
+
+  _updateHotkeysOverlay() {
+    if (this.hotkeys_overlay && !this._hotkeysOverlay) {
+      this._hotkeysOverlay = new HotkeysOverlay(this);
+    } else if (!this.hotkeys_overlay && this._hotkeysOverlay) {
+      this._hotkeysOverlay.destroy();
+      this._hotkeysOverlay = null;
+    }
   }
 
   // macOS "Show suggested and recent apps in Dock": an app that quits goes

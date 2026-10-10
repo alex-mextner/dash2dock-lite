@@ -29,3 +29,15 @@
 #dash .dash-item-container {
   /*border: 2px solid magenta;*/
 }
+
+/* hotkeys-overlay: Super+N digit on a pinned app icon */
+.d2da-hotkey-number {
+  font-size: 11pt;
+  font-weight: bold;
+  color: #fff;
+  background-color: rgba(0, 0, 0, 0.7);
+  border-radius: 999px;
+  min-width: 20px;
+  padding: 1px 5px;
+  text-align: center;
+}
