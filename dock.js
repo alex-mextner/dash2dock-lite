@@ -1743,7 +1743,7 @@ export let Dock = GObject.registerClass(
             } else {
               Compat.maximizeWindow(focusedWindow);
             }
-          } else {
+          } else if (this.extension.click_minimizes) {
             windows.forEach((w) => {
               w.minimize();
             });
