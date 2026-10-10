@@ -118,6 +118,30 @@
           </object>
         </child>
         <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Bounce On Any Launch</property>
+            <property name="subtitle" translatable="yes">With the opening animation on, pinned apps also bounce when launched from the keyboard, the app grid or a terminal.</property>
+            <property name="activatable-widget">launch-bounce-anywhere</property>
+            <child>
+              <object class="GtkSwitch" id="launch-bounce-anywhere">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Bounce For Attention</property>
+            <property name="subtitle" translatable="yes">Keep bouncing the icon of an app that asks for attention until it is focused, and show the dock if it is hidden.</property>
+            <property name="activatable-widget">urgent-bounce</property>
+            <child>
+              <object class="GtkSwitch" id="urgent-bounce">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
           <object class="AdwActionRow" id="lamp-app-animation-row">
             <property name="visible">true</property>
             <property name="title" translatable="yes">Lamp Animation</property>
@@ -126,6 +150,31 @@
             <child>
               <object class="GtkSwitch" id="lamp-app-animation">
                 <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Minimize Into App Icon</property>
+            <property name="subtitle" translatable="yes">Windows shrink into their app's dock icon when minimized and grow out of it when restored.</property>
+            <property name="activatable-widget">minimize-to-icon</property>
+            <child>
+              <object class="GtkSwitch" id="minimize-to-icon">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Minimize Effect</property>
+            <property name="subtitle" translatable="yes">Genie bends windows into their dock icon, as on macOS, drawn by the GPU. Not used while the Magic Lamp extension is active.</property>
+            <property name="activatable-widget">minimize-effect</property>
+            <child>
+              <object class="GtkDropDown" id="minimize-effect">
+                <property name="valign">center</property>
+                <property name="model">minimize-effect-model</property>
               </object>
             </child>
           </object>
@@ -170,6 +219,11 @@
                 <property name="valign">center</property>
               </object>
             </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwEntryRow" id="toggle-autohide-shortcut">
+            <property name="title" translatable="yes">Toggle Hiding Shortcut (e.g. &lt;Super&gt;&lt;Alt&gt;d, comma-separated)</property>
           </object>
         </child>
         <child>
@@ -308,6 +362,12 @@
         </child>
       </object>
     </child>
+  </object>
+  <object class="GtkStringList" id="minimize-effect-model">
+    <items>
+      <item translatable="yes">Scale (Shell)</item>
+      <item translatable="yes">Genie</item>
+    </items>
   </object>
   <object class="GtkStringList" id="preferred-monitor-model">
     <items>

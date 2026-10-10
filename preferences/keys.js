@@ -53,11 +53,28 @@ export const SettingsKeys = (patch) => {
       key_maps: {},
       // test: { values: [0, 1] },
     },
+    'launch-bounce-anywhere': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'urgent-bounce': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'lamp-app-animation': {
       default_value: false,
       widget_type: 'switch',
       key_maps: {},
       // test: { values: [0, 1] },
+    },
+    'minimize-to-icon': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'minimize-effect': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      test: { values: [0, 1] },
     },
     'autohide-dash': {
       default_value: true,
@@ -164,6 +181,60 @@ export const SettingsKeys = (patch) => {
       default_value: true,
       widget_type: 'switch',
     },
+    'shift-click-action': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      test: { values: [0, 1] },
+    },
+    'recent-apps-count': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      test: { values: [0, 1, 2, 3, 4, 5] },
+    },
+    'menu-open-at-login': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'keyboard-focus': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'hotkeys-overlay': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'drag-off-remove': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'background-menu': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'spring-loading': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'toggle-autohide-shortcut': {
+      default_value: [],
+      widget_type: 'strv',
+    },
+    'click-action-spread': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'show-all-windows-item': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'isolate-workspaces': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'minimized-window-tiles': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'apps-icon': {
       default_value: true,
       widget_type: 'switch',
@@ -176,6 +247,10 @@ export const SettingsKeys = (patch) => {
       default_value: false,
       widget_type: 'switch',
     },
+    'trash-style': {
+      default_value: 0,
+      widget_type: 'dropdown',
+    },
     'downloads-icon': {
       default_value: false,
       widget_type: 'switch',
@@ -187,6 +262,24 @@ export const SettingsKeys = (patch) => {
     'folder-stacks': {
       default_value: [],
       widget_type: 'json_array',
+    },
+    'downloads-stack-view': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      options: ['fan', 'grid', 'list', 'automatic'],
+      test: { values: [0, 1, 2, 3] },
+    },
+    'downloads-stack-sort': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      options: ['date-modified', 'name', 'date-added', 'date-created', 'kind'],
+      test: { values: [0, 1, 2, 3, 4] },
+    },
+    'downloads-stack-display': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      options: ['folder', 'stack'],
+      test: { values: [0, 1] },
     },
     'downloads-icon-rotate-labels': {
       default_value: false,
@@ -206,6 +299,10 @@ export const SettingsKeys = (patch) => {
       test: { values: [5, 8, 10, 12, 15, 20, 25] },
     },
     'mounted-icon': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'file-drops': {
       default_value: false,
       widget_type: 'switch',
     },
@@ -379,8 +476,20 @@ export const SettingsKeys = (patch) => {
     'notification-badge-style': {
       default_value: 0,
       widget_type: 'dropdown',
-      options: ['default', 'dot', 'dash', 'square', 'triangle', 'diamond'],
-      test: { values: [0, 1, 2, 3, 4, 5] },
+      options: [
+        'default',
+        'dot',
+        'dash',
+        'square',
+        'triangle',
+        'diamond',
+        'count',
+      ],
+      test: { values: [0, 1, 2, 3, 4, 5, 6] },
+    },
+    'launcher-api': {
+      default_value: false,
+      widget_type: 'switch',
     },
     'notification-badge-color': {
       default_value: [1, 1, 1, 1],

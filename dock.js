@@ -11,17 +11,28 @@ import Graphene from 'gi://Graphene';
 import St from 'gi://St';
 
 import { Dash } from 'resource:///org/gnome/shell/ui/dash.js';
+import { gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import { TintEffect } from './effects/tint_effect.js';
 import { MonochromeEffect } from './effects/monochrome_effect.js';
 import { GlassPlatter } from './effects/glass.js';
+import { DockInteractions } from './interactions.js';
 
 import { DockIcon, DockItemContainer, DockBackground } from './dockItems.js';
 import { DockItemList } from './dockItemMenu.js';
+import { setupStackItem } from './stackPanel.js';
 import { AutoHide } from './autohide.js';
 import { Animator } from './animator.js';
 import { live } from './probe.js';
 import { get_distance_sqr, get_distance, isInRect, isOverlapRect } from './utils.js';
+import { syncOpenAtLogin, hideOpenAtLogin } from './openAtLogin.js';
+import {
+  filterDashRunningApps,
+  onActiveWorkspace,
+  runningApps,
+  syncMinimizedTiles,
+  syncShowAllWindowsItem,
+} from './windowsView.js';
 
 const Point = Graphene.Point;
 
@@ -126,6 +137,8 @@ export let Dock = GObject.registerClass(
         this.autohider.enable();
       }
 
+      this.interactions = new DockInteractions(this);
+
       this.struts = new St.Widget({
         name: 'DockStruts',
         offscreen_redirect: Clutter.OffscreenRedirect.ALWAYS,
@@ -161,6 +174,9 @@ export let Dock = GObject.registerClass(
         this._glass?.destroy();
         this._glass = null;
 
+        this.interactions.destroy();
+        this.interactions = null;
+
         this.autohider.disable();
         this.autohider.dock = null;
         this.autohider.extension = null;
@@ -181,6 +197,8 @@ export let Dock = GObject.registerClass(
       if (this.dash) {
         // the list may point at a folder stack item that goes with the dash
         this._destroyList();
+        this._minimizedTiles?.forEach((tile) => tile.destroy());
+        this._minimizedTiles = null;
 
         // every item, also those _findIcons() skips (hidden non-favorites)
         let box = Compat.getDashBox(this.dash);
@@ -204,6 +222,7 @@ export let Dock = GObject.registerClass(
         this._hoveredIcon = null;
         this._lastHoveredIcon = null;
         this._nearestIcon = null;
+        this._keyFocusIcon = null;
         this._dragged = null;
         this._dragging = false;
         this._trashIcon = null;
@@ -258,6 +277,8 @@ export let Dock = GObject.registerClass(
     }
 
     undock() {
+      global.stage.disconnectObject(this);
+      this._keyFocusIcon = null;
       this._destroyList();
       this._endAnimation();
       this._removeIconEffect();
@@ -274,7 +295,11 @@ export let Dock = GObject.registerClass(
       this._debounceBeginAnimateSeq = null;
     }
 
-    _onButtonPressEvent(evt) {
+    // connectObject handlers receive (actor, event)
+    _onButtonPressEvent(actor, evt) {
+      if (this.interactions?.handleButtonPress(evt)) {
+        return Clutter.EVENT_STOP;
+      }
       return Clutter.EVENT_PROPAGATE;
     }
 
@@ -343,6 +368,76 @@ export let Dock = GObject.registerClass(
       this.autohider._debounceCheckHide();
       return Clutter.EVENT_PROPAGATE;
     }
+
+    // keyboard-focus: Ctrl+Alt+Tab lists the dock as "Dock" (macOS Ctrl+F3).
+    // The Shell Dash already registered itself as "Dash" in its constructor;
+    // re-register with a callback that reveals an autohidden dock first.
+    _updateKeyboardFocus() {
+      let dash = this.dash;
+      if (!dash) return;
+      let manager = Main.ctrlAltTabManager;
+      let current = manager._items?.find((item) => item.root === dash);
+      if (current && !this._shellFocusGroup) {
+        this._shellFocusGroup = {
+          name: current.name,
+          iconName: current.iconName,
+          sortGroup: current.sortGroup,
+        };
+      }
+      manager.removeGroup(dash);
+      global.stage.disconnectObject(this);
+      this._setKeyFocusIcon(null);
+
+      if (!this.extension.keyboard_focus) {
+        let shell = this._shellFocusGroup;
+        if (shell) {
+          manager.addGroup(dash, shell.name, shell.iconName, {
+            sortGroup: shell.sortGroup,
+          });
+        }
+        return;
+      }
+
+      manager.addGroup(dash, _('Dock'), 'user-bookmarks-symbolic', {
+        focusCallback: (timestamp) => {
+          this.autohider?.show();
+          if (!Main.overview.visible) {
+            global.display.unset_input_focus(timestamp);
+          }
+          dash.navigate_focus(null, St.DirectionType.TAB_FORWARD, false);
+        },
+      });
+      global.stage.connectObject(
+        'notify::key-focus',
+        () => this._onKeyFocusChanged(),
+        this
+      );
+    }
+
+    // The focused Shell AppIcon is invisible (the renderer draws the dock),
+    // so show focus the way the pointer would: magnify the focused item.
+    _onKeyFocusChanged() {
+      let focus = global.stage.key_focus;
+      let icon = null;
+      if (focus && this.dash?.contains(focus)) {
+        icon =
+          (this._icons ?? []).find((c) => c === focus || c.contains(focus)) ??
+          null;
+      }
+      this._setKeyFocusIcon(icon);
+    }
+
+    _setKeyFocusIcon(icon) {
+      if (icon === (this._keyFocusIcon ?? null)) return;
+      this._keyFocusIcon = icon;
+      if (icon) {
+        this.autohider?.show();
+      } else {
+        this.autohider?._debounceCheckHide();
+      }
+      this._beginAnimation();
+    }
+
     _onMonitorsChanged() {
       this._needsLayout = true;
       this.relayout();
@@ -424,7 +519,7 @@ export let Dock = GObject.registerClass(
     }
 
     slideOut() {
-      if (this._list && this._list.visible) {
+      if ((this._list && this._list.visible) || this._stackPanel) {
         return;
       }
       if (!this._hidden) {
@@ -454,8 +549,25 @@ export let Dock = GObject.registerClass(
       dash.connect('destroy', () => live('dash', -1));
 
       Compat.setupDashProxy(dash);
+      filterDashRunningApps(dash, () => this.extension.isolate_workspaces);
+
+      // Dash._redisplay() reads only get_running() from _appSystem (its
+      // signals are connected already): appending the recent apps there
+      // gives them real AppIcons after the running ones, behind the same
+      // separator, and they turn into running icons on launch by themselves
+      let appSystem = dash._appSystem;
+      if (appSystem) {
+        dash._appSystem = {
+          get_running: () => {
+            let running = appSystem.get_running();
+            let recent = this.extension.recentDockApps();
+            return recent.length ? running.concat(recent) : running;
+          },
+        };
+      }
 
       this.dash = dash;
+      this._updateKeyboardFocus();
       let dashBg = Compat.getDashBackground(this.dash);
       if (dashBg) {
         dashBg.visible = false;
@@ -634,9 +746,10 @@ export let Dock = GObject.registerClass(
         let favorites = Fav.getAppFavorites().getFavoriteMap();
         apps = Object.keys(favorites).length;
         if (!this.extension.favorites_only) {
-          apps += Shell.AppSystem.get_default()
-            .get_running()
-            .filter((app) => !(app.get_id() in favorites)).length;
+          apps += runningApps(this.extension.isolate_workspaces).filter(
+            (app) => !(app.get_id() in favorites)
+          ).length;
+          apps += this.extension.recentDockApps().length;
         }
       } catch {
         // fall back to the actors found
@@ -958,6 +1071,19 @@ export let Dock = GObject.registerClass(
           // c._grid.style = noAnimation ? '' : 'background: none !important;';
           c._grid.style = 'background: none !important;';
         }
+        if (c._appwell && !c._appwell._d2daMenuHooked) {
+          c._appwell._d2daMenuHooked = true;
+          // the AppMenu is created lazily on first open; the emitter owns
+          // this handler, so it goes away with the Shell's AppIcon
+          c._appwell.connect('menu-state-changed', (appwell, open) => {
+            if (!open) return;
+            if (this.extension.menu_open_at_login) {
+              syncOpenAtLogin(appwell);
+            } else {
+              hideOpenAtLogin(appwell);
+            }
+          });
+        }
         if (c._appwell && !c._appwell._activate) {
           c._appwell._activate = c._appwell.activate;
           c._appwell.activate = (button) => {
@@ -975,17 +1101,33 @@ export let Dock = GObject.registerClass(
                 if (!target._menu) {
                   this._maybeBounce(target);
                 }
-                this._maybeMinimizeOrMaximize(target._appwell.app, button);
-                return target._appwell._activate(button);
+                return this._activateAppIcon(target._appwell, button);
               }
               if (!c._menu) {
                 this._maybeBounce(c);
               }
-              this._maybeMinimizeOrMaximize(c._appwell.app, button);
-              return c._appwell._activate(button);
+              return this._activateAppIcon(c._appwell, button);
             } catch (e) {
               console.error('d2da: appwell activate', e);
             }
+          };
+        }
+        // Shell AppIcon menus only (our own items have DockItemMenu)
+        if (c._appwell && !c.custom_icon && !c._appwell._popupMenu) {
+          let appwell = c._appwell;
+          appwell._popupMenu = appwell.popupMenu;
+          appwell.popupMenu = (...args) => {
+            let ret = appwell._popupMenu(...args);
+            try {
+              syncShowAllWindowsItem(
+                appwell,
+                this.extension.show_all_windows_item,
+                (app) => this.extension.appSpread?.toggle(app)
+              );
+            } catch (e) {
+              console.error('d2da: show all windows item', e);
+            }
+            return ret;
           };
         }
         let icon = c._icon;
@@ -1014,8 +1156,10 @@ export let Dock = GObject.registerClass(
           _draggable._dragBeginId = _draggable.connect('drag-begin', () => {
             this._dragging = true;
             this._dragged = icon;
+            this.interactions?.beginIconDrag(c.child.app);
           });
           _draggable._dragEndId = _draggable.connect('drag-end', () => {
+            this.interactions?.endIconDrag();
             this._dragging = false;
             this._icons = null;
             this._needsLayout = true;
@@ -1134,11 +1278,13 @@ export let Dock = GObject.registerClass(
           icon: `_folderStack:${stack.key}`,
           folder: stack.path,
           path: stack.app,
+          stack,
           prepare: () => services.checkFolderStack(stack),
           files: () => stack.files,
           total: () => stack.total,
         });
         item._folderStack = stack;
+        setupStackItem(this, item, stack);
         this._folderIcons.set(stack.key, item);
         this._icons = null;
         this._needsLayout = true;
@@ -1169,6 +1315,21 @@ export let Dock = GObject.registerClass(
           this._needsLayout = true;
         }
       }
+
+      //---------------
+      // minimized-window tiles, between the stacks and the Trash
+      //---------------
+      this._minimizedTiles = syncMinimizedTiles(this, this._minimizedTiles);
+    }
+
+    // Windows/workspace changed (WindowEvents, minimized tiles): re-filter the
+    // running apps, re-sync the tiles and redraw the dots.
+    _onWindowsChanged() {
+      if (this.extension.isolate_workspaces) {
+        this.dash?._queueRedisplay();
+      }
+      this._needsLayout = true;
+      this._beginAnimation();
     }
 
     _snapToContainerEdge(container, child, edge = true) {
@@ -1561,6 +1722,15 @@ export let Dock = GObject.registerClass(
         this.simulated_pointer = p;
         this._preview--;
       }
+      // keyboard focus (keyboard-focus setting) drives the magnification
+      // like a pointer; read each frame because the dock may still be
+      // sliding in. Only while an icon has key focus.
+      else if (this._keyFocusIcon) {
+        let target = this._keyFocusIcon._icon ?? this._keyFocusIcon;
+        let [x, y] = target.get_transformed_position();
+        let [w, h] = target.get_transformed_size();
+        this.simulated_pointer = [x + w / 2, y + h / 2];
+      }
 
       //! add layout here instead of at the
       this.animator.animate(dt);
@@ -1639,6 +1809,8 @@ export let Dock = GObject.registerClass(
       }
 
       this._updateFocusedIcon();
+      // icons are at rest now: the minimize target can be measured
+      this.extension.windowFeedback?.queueIconGeometry();
 
       if (this.extension._hiTimer) {
         this.extension._hiTimer.cancel(this._animationSeq);
@@ -1656,6 +1828,7 @@ export let Dock = GObject.registerClass(
       let list = this._list;
       this._list = null;
       list?.destroy();
+      this._stackPanel?.close();
     }
 
     _debounceEndAnimation() {
@@ -1699,17 +1872,62 @@ export let Dock = GObject.registerClass(
       });
     }
 
-    _maybeMinimizeOrMaximize(app, button) {
-      if (!app?.get_windows) {
+    // Activation of a running or stopped app's icon. Spread-on-click and
+    // workspace isolation are opt-in; otherwise the Shell's own
+    // AppIcon.activate runs, after the minimize/maximize handling.
+    _activateAppIcon(appwell, button) {
+      let app = appwell.app;
+      if (this._spreadOnClick(app, button)) {
         return;
       }
+      // true: shift-click-action already opened a new window
+      if (this._maybeMinimizeOrMaximize(app, button)) {
+        return;
+      }
+      if (
+        this.extension.isolate_workspaces &&
+        app.state === Shell.AppState.RUNNING &&
+        !this._clickState(app, button).openNewWindow
+      ) {
+        // the Shell's app.activate() would jump to the app's last window on
+        // any workspace; isolated, focus this workspace's most recent window,
+        // or open a new one here (Ubuntu Dock isolate-workspaces). Apps that
+        // cannot open another window still go to the one they have.
+        let windows = this.getAppWindowsFiltered(app);
+        if (windows.length || app.can_open_new_window()) {
+          if (!windows.length) {
+            appwell.animateLaunch?.();
+            app.open_new_window(-1);
+          } else if (!windows.some((w) => w.has_focus())) {
+            Main.activateWindow(windows[0]);
+          }
+          Main.overview.hide();
+          return;
+        }
+      }
+      return appwell._activate(button);
+    }
 
-      // let windows = app.get_windows();
+    // click-action-spread: a click on the focused app that has several
+    // windows opens its spread (Ubuntu Dock 'focus-or-appspread'), so the
+    // first click still just focuses the app.
+    _spreadOnClick(app, button) {
+      if (!this.extension.click_action_spread || !app?.get_windows) {
+        return false;
+      }
+      let { shift, openNewWindow } = this._clickState(app, button);
+      if (shift || openNewWindow) {
+        return false;
+      }
       let windows = this.getAppWindowsFiltered(app);
-      if (!windows.length) {
-        return;
+      if (windows.length < 2 || !windows.some((w) => w.has_focus())) {
+        return false;
       }
+      this.extension.appSpread?.toggle(app);
+      return true;
+    }
 
+    _clickState(app, button) {
       let event = Clutter.get_current_event();
       let modifiers = event ? event.get_state() : 0;
       // St.Button activates on release, whose state still holds the pressed
@@ -1733,7 +1951,33 @@ export let Dock = GObject.registerClass(
         app.can_open_new_window() &&
         app.state == Shell.AppState.RUNNING &&
         (isCtrlPressed || isMiddleButton);
+      return { shift, openNewWindow };
+    }
+
+    _maybeMinimizeOrMaximize(app, button) {
+      if (!app?.get_windows) {
+        return;
+      }
+
+      // let windows = app.get_windows();
+      let windows = this.getAppWindowsFiltered(app);
+      if (!windows.length) {
+        return;
+      }
+
+      let { shift, openNewWindow } = this._clickState(app, button);
       if (openNewWindow) return;
+
+      // Ubuntu Dock opens another window on Shift+click; returning true tells
+      // the caller to skip the regular activate (which would just focus)
+      if (
+        shift &&
+        this.extension.shift_click_action === 1 &&
+        app.can_open_new_window()
+      ) {
+        app.open_new_window(-1);
+        return true;
+      }
 
       let workspaceManager = global.workspace_manager;
       let activeWs = workspaceManager.get_active_workspace();
@@ -1772,7 +2016,10 @@ export let Dock = GObject.registerClass(
         // multi-monitors fix -- where focus can seem to get lost
         if (!hidden.length) {
           let windows = app.get_windows().filter((w) => {
-            return w.get_monitor() == this._monitor.index;
+            return (
+              w.get_monitor() == this._monitor.index &&
+              (!this.extension.isolate_workspaces || onActiveWorkspace(w))
+            );
           });
           if (windows.length > 0) {
             this.extension._hiTimer.runOnce(() => {
@@ -1854,12 +2101,16 @@ export let Dock = GObject.registerClass(
         }
       }
 
+      let windows = app.get_windows();
       if (apply_filtering) {
-        return app.get_windows().filter((w) => {
+        windows = windows.filter((w) => {
           return w.get_monitor() == this._monitor.index;
         });
       }
-      return app.get_windows();
+      if (this.extension.isolate_workspaces) {
+        windows = windows.filter(onActiveWorkspace);
+      }
+      return windows;
     }
 
     _onScrollEvent(obj, evt) {

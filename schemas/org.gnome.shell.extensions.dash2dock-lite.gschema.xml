@@ -41,10 +41,30 @@
         <summary>Open app animation</summary>
         <description>Open app animation.</description>
     </key>
+    <key type="b" name="launch-bounce-anywhere">
+        <default>false</default>
+        <summary>Bounce on launch from anywhere</summary>
+        <description>With the opening animation on, a pinned app's icon also bounces when the app is launched outside the dock (Super+number, app grid, a terminal).</description>
+    </key>
+    <key type="b" name="urgent-bounce">
+        <default>false</default>
+        <summary>Bounce apps that need attention</summary>
+        <description>While an unfocused app asks for attention (a window demands attention or is urgent), its icon keeps bouncing and an autohidden dock stays shown, as on macOS.</description>
+    </key>
     <key type="b" name="lamp-app-animation">
         <default>false</default>
         <summary>Minimize app lamp animation</summary>
         <description>Minimize app genie on a lamp animation.</description>
+    </key>
+    <key type="b" name="minimize-to-icon">
+        <default>false</default>
+        <summary>Minimize into the app icon</summary>
+        <description>Windows minimize into (and restore out of) their app's dock icon. Off: Shell animates them into the monitor's top-left corner.</description>
+    </key>
+    <key type="i" name="minimize-effect">
+        <default>0</default>
+        <summary>Minimize effect</summary>
+        <description>How windows minimize and restore: 0 = Shell's scale animation, 1 = genie into the app's dock icon (GPU). The genie stands aside while the Magic Lamp extension is active.</description>
     </key>
     <key type="b" name="autohide-dash">
         <default>false</default>
@@ -201,6 +221,11 @@
         <summary>Show trash icon</summary>
         <description>Show a dynamic trash icon.</description>
     </key>
+    <key type="i" name="trash-style">
+        <default>0</default>
+        <summary>Trash icon style</summary>
+        <description>0: the icon theme's trash icon. 1: a translucent glass bin that shows what is in the Trash (fill level, thumbnails and file types).</description>
+    </key>
     <key type="b" name="downloads-icon">
         <default>false</default>
         <summary>Show downloads icon</summary>
@@ -229,7 +254,22 @@
     <key type="s" name="folder-stacks">
         <default>"[]"</default>
         <summary>Folder stacks</summary>
-        <description>JSON array of extra folders shown as stacks next to Downloads: "path" or {"path", "title", "icon"}</description>
+        <description>JSON array of extra folders shown as stacks next to Downloads: "path" or {"path", "title", "icon", "view", "sort", "display"}; view: fan|grid|list|automatic, sort: date-modified|name|date-added|date-created|kind, display: folder|stack</description>
+    </key>
+    <key type="i" name="downloads-stack-view">
+        <default>0</default>
+        <summary>Downloads stack view</summary>
+        <description>How the Downloads stack opens: 0 fan, 1 grid, 2 list, 3 automatic (fan if the files fit, else grid).</description>
+    </key>
+    <key type="i" name="downloads-stack-sort">
+        <default>0</default>
+        <summary>Downloads stack sort</summary>
+        <description>Downloads stack order: 0 date modified, 1 name, 2 date added, 3 date created, 4 kind.</description>
+    </key>
+    <key type="i" name="downloads-stack-display">
+        <default>0</default>
+        <summary>Downloads stack display</summary>
+        <description>Downloads dock icon: 0 the folder icon, 1 the top file (macOS "Display as Stack").</description>
     </key>
     <key type="i" name="max-recent-items">
         <default>0</default>
@@ -240,6 +280,11 @@
         <default>false</default>
         <summary>Show mounted device icons</summary>
         <description>Show a mounted device icon.</description>
+    </key>
+    <key type="b" name="file-drops">
+        <default>false</default>
+        <summary>File drops</summary>
+        <description>Accept files dragged onto the dock: Trash moves them to the trash, an app opens them, a folder stack or mounted drive moves or copies them there, as in the macOS Dock. Runs a small GTK helper process that receives the drop.</description>
     </key>
     <key type="b" name="clock-icon">
         <default>false</default>
@@ -331,6 +376,76 @@
         <summary>Click minimizes focused app</summary>
         <description>Clicking the icon of the focused app minimizes its windows. Off: the click does nothing, as on macOS.</description>
     </key>
+    <key type="i" name="shift-click-action">
+        <default>0</default>
+        <summary>Shift+click action</summary>
+        <description>0: toggle maximize of the focused window (upstream). 1: open a new window (Ubuntu Dock default).</description>
+    </key>
+    <key type="i" name="recent-apps-count">
+        <default>0</default>
+        <summary>Recent apps in dock</summary>
+        <description>Show up to this many recently closed, non-pinned apps after the running apps (macOS "Show suggested and recent apps in Dock"). 0: off.</description>
+    </key>
+    <key type="as" name="recent-apps">
+        <default>[]</default>
+        <summary>Recently closed apps</summary>
+        <description>Most-recently-closed app ids, newest first; maintained by the extension while recent-apps-count is above 0.</description>
+    </key>
+    <key type="b" name="menu-open-at-login">
+        <default>false</default>
+        <summary>Open at Login menu item</summary>
+        <description>Add an "Open at Login" switch to the app icon menu; it creates or removes ~/.config/autostart/APP.desktop.</description>
+    </key>
+    <key type="b" name="keyboard-focus">
+        <default>false</default>
+        <summary>Keyboard focus into the dock</summary>
+        <description>List the dock as "Dock" in Ctrl+Alt+Tab; selecting it reveals the dock and highlights the focused icon (arrows move, Enter opens).</description>
+    </key>
+    <key type="b" name="hotkeys-overlay">
+        <default>false</default>
+        <summary>Number overlay while holding Super</summary>
+        <description>While Super is held for about half a second, show the numbers 1-9 of Super+N on the first nine app icons.</description>
+    </key>
+    <key type="b" name="drag-off-remove">
+        <default>false</default>
+        <summary>Drag icons off the dock to remove them</summary>
+        <description>Dragging a pinned app icon away from the dock shows "Remove"; dropping it there unpins the app with a poof, as on macOS.</description>
+    </key>
+    <key type="b" name="background-menu">
+        <default>false</default>
+        <summary>Dock background menu</summary>
+        <description>Right-clicking the dock background or separator opens a menu with Hiding, Magnification, Position on Screen and Dock Settings, as on macOS.</description>
+    </key>
+    <key type="b" name="spring-loading">
+        <default>false</default>
+        <summary>Spring-loaded icons</summary>
+        <description>While dragging files, an autohidden dock is revealed, and holding the files over an app icon for a second brings that app forward, as on macOS.</description>
+    </key>
+    <key type="as" name="toggle-autohide-shortcut">
+        <default>[]</default>
+        <summary>Toggle autohide shortcut</summary>
+        <description>Keyboard shortcut that turns dock hiding on and off (macOS: Option-Command-D, here &lt;Super&gt;&lt;Alt&gt;d).</description>
+    </key>
+    <key type="b" name="click-action-spread">
+        <default>false</default>
+        <summary>Click spreads app windows</summary>
+        <description>Clicking the icon of the focused app that has several windows shows only its windows (Ubuntu Dock focus-or-appspread). Off: the click focuses or minimizes as usual.</description>
+    </key>
+    <key type="b" name="show-all-windows-item">
+        <default>false</default>
+        <summary>Show All Windows menu item</summary>
+        <description>Add &quot;Show All Windows&quot; to the app icon menu: an overview showing only that app's windows, as on macOS.</description>
+    </key>
+    <key type="b" name="isolate-workspaces">
+        <default>false</default>
+        <summary>Isolate workspaces</summary>
+        <description>Running apps, running indicators and click/scroll window cycling only count windows on the active workspace, as in Ubuntu Dock.</description>
+    </key>
+    <key type="b" name="minimized-window-tiles">
+        <default>false</default>
+        <summary>Minimized window tiles</summary>
+        <description>Show each minimized window as a live thumbnail before the Trash, as on macOS when &quot;Minimize windows into application icon&quot; is off.</description>
+    </key>
     <key type="b" name="apps-icon">
         <default>true</default>
         <summary>Apps icon</summary>
@@ -380,6 +495,11 @@
         <default>0</default>
         <summary>Notification badge</summary>
         <description>Customize the notification badge style.</description>
+    </key>
+    <key type="b" name="launcher-api">
+        <default>false</default>
+        <summary>Unity LauncherEntry API</summary>
+        <description>Show the counts, progress bars and urgency apps publish through com.canonical.Unity.LauncherEntry.</description>
     </key>
     <key type="i" name="notification-badge-size">
         <default>0</default>

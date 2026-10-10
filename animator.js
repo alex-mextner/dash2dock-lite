@@ -632,12 +632,13 @@ export let Animator = class {
           (icon._icon.translationY + translationY * 3) / 4;
       }
 
-      // clear bounce animation
+      // A running bounce sets _bounce on each of its frames, before or after
+      // this one depending on which timer subscriber came first; only once
+      // none has run since the last frame is its offset cleared. The flag is
+      // consumed below, after the renderer has seen it.
       if (icon._appwell) {
-        icon._appwell.translationY = 0;
         didBounce = icon._appwell._bounce;
-        // clear bounce
-        icon._appwell._bounce = false;
+        if (!didBounce) icon._appwell.translationY = 0;
       }
     });
 
@@ -699,7 +700,9 @@ export let Animator = class {
         icon._renderer._icon = icon._icon;
         icon._renderer.set_style_class_name('');
 
-        if (!icon._appwell?._bounce) {
+        if (icon._appwell?._bounce) {
+          icon._appwell._bounce = false;
+        } else {
           icon._renderer.translationY = 0;
         }
 
@@ -814,6 +817,8 @@ export let Animator = class {
         // label
         if (
           icon === hoveredIcon &&
+          // an open stack panel sits where the label would show
+          !dock._stackPanel &&
           icon._label &&
           icon._label.text &&
           icon._label.text.length
@@ -890,20 +895,26 @@ export let Animator = class {
       let badge = this._badges[icon._idx];
       badge.hide();
       if (icon != dock._dragged) {
-        let appNotices = icon._appwell
-          ? dock.extension.services._appNotices[icon._appwell.app.get_id()]
-          : null;
-        let noticesCount = 0;
-        if (appNotices) {
-          noticesCount = appNotices.count;
-        }
-        // noticesCount = 1;
-        let target = dock.renderArea;
-        if (badge && noticesCount > 0) {
+        let services = dock.extension.services;
+        let appId = icon._appwell?.app.get_id();
+        let noticesCount = (appId && services._appNotices?.[appId]?.count) || 0;
+        // LauncherEntry count wins when the app shows one: apps like Telegram
+        // know their unread total better than the sum of their banners, and
+        // adding both would count each message twice.
+        let entry = appId ? services.launcherEntry(appId) : null;
+        if (entry?.countVisible) noticesCount = entry.count;
+        let progress = entry?.progressVisible ? entry.progress : -1;
+        let style =
+          dock.extension.notification_badge_style_options[
+            dock.extension.notification_badge_style
+          ] || 'default';
+        // 'default' is the "None" style: no actor for an invisible badge
+        if (style == 'default') noticesCount = 0;
+        if (badge && (noticesCount > 0 || progress >= 0)) {
           badge.update(icon, {
             noticesCount,
-            position: dock._position,
-            vertical,
+            progress,
+            style,
             extension: dock.extension,
             dock,
           });
@@ -956,6 +967,9 @@ export let Animator = class {
           dock,
         });
       }
+
+      // minimized-window tiles draw a window clone over the renderer
+      icon._minimizedTile?.sync(icon);
     });
 
     // separators
@@ -1142,9 +1156,13 @@ export let Animator = class {
     dock.extension.integrations.bms_update_size(this);
   }
 
-  bounceIcon(appwell) {
+  // hops: number of bounces; defaults to the animation-bounce-frequency pick
+  bounceIcon(appwell, hops = null) {
     let dock = this.dock;
     let app_id = Compat.getAppId(appwell);
+    // lets other triggers for the same launch (dock click, then the app's
+    // STARTING state) tell that a bounce is already under way
+    appwell._bounceAt = Date.now();
 
     // let scaleFactor = dock.getMonitor().geometry_scale;
     //! why not scaleFactor?
@@ -1247,11 +1265,9 @@ export let Animator = class {
     ];
 
     let frames = [];
-    for (
-      let i = 0;
-      i < [3, 1, 2, 3][dock.extension.animation_bounce_frequency || 0];
-      i++
-    ) {
+    let count =
+      hops ?? [3, 1, 2, 3][dock.extension.animation_bounce_frequency || 0];
+    for (let i = 0; i < count; i++) {
       _frames.forEach((b) => {
         frames.push({
           ...b,

@@ -24,6 +24,7 @@ import * as Fav from 'resource:///org/gnome/shell/ui/appFavorites.js';
 
 import St from 'gi://St';
 import Shell from 'gi://Shell';
+import Meta from 'gi://Meta';
 import Graphene from 'gi://Graphene';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -35,10 +36,14 @@ import { Dock } from './dock.js';
 import { Services } from './services.js';
 import { Integrations } from './integrations.js';
 import { WindowTracker } from './windowTracker.js';
+import { WindowFeedback } from './windowFeedback.js';
 import { runTests } from './diagnostics.js';
 import { probe, applySmokeSettings } from './probe.js';
 import * as Compat from './compat.js';
 import { WallpaperTone, markColors } from './contrast.js';
+import { HotkeysOverlay } from './hotkeysOverlay.js';
+import { AppSpread, WindowEvents } from './windowsView.js';
+import { FileDrops } from './fileDrops.js';
 
 import {
   Extension,
@@ -53,6 +58,10 @@ const ANIM_ICON_QUALITY = 2.0;
 const ANIM_INTERVAL = 15;
 const ANIM_INTERVAL_PAD = 15;
 
+// MRU length kept in dconf; above the largest recent-apps-count so pinned
+// or running apps in the list still leave enough candidates
+const RECENT_APPS_KEPT = 10;
+
 const ACTION_ORDER = [
   'compiz',
   'bms',
@@ -60,7 +69,13 @@ const ACTION_ORDER = [
   'glass',
   'folder_stacks_setup',
   'mounts',
+  'trash_style',
+  'launcher_api',
+  'file_drops',
   'recents_debounce',
+  'recent_apps',
+  'keyboard_focus',
+  'hotkeys_overlay',
   'animation_fps',
   'autohide',
   'multi_monitor',
@@ -75,14 +90,19 @@ const ACTION_ORDER = [
   'style',
   'icon_effect',
   'icon_effect_color',
+  'windows_view',
   'layout',
   'animate_refresh',
   'animate_preview',
   'animate',
+  'window_feedback',
 ];
 
 const REACTIONS = Object.freeze({
   'lamp-app-animation': ['compiz'],
+  'minimize-to-icon': ['window_feedback'],
+  'urgent-bounce': ['window_feedback'],
+  'minimize-effect': ['window_feedback'],
   'animation-fps': ['animation_fps'],
   'debug-visual': ['animate'],
   'mounted-icon': ['mounts', 'animate_refresh'],
@@ -95,6 +115,7 @@ const REACTIONS = Object.freeze({
   'notification-badge-size': ['animate'],
   'notification-badge-color': ['animate'],
   'notification-badge-style': ['animate'],
+  'launcher-api': ['launcher_api', 'animate'],
   'running-indicator-size': ['animate'],
   'running-indicator-color': ['animate'],
   'running-indicator-style': ['animate'],
@@ -106,8 +127,18 @@ const REACTIONS = Object.freeze({
   'calendar-icon': ['layout', 'animate_refresh'],
   'clock-icon': ['layout', 'animate_refresh'],
   'favorites-only': ['layout', 'animate_refresh'],
+  'keyboard-focus': ['keyboard_focus'],
+  'hotkeys-overlay': ['hotkeys_overlay'],
+  'recent-apps-count': ['recent_apps', 'layout', 'animate_refresh'],
   'downloads-path': ['folder_stacks_setup', 'layout', 'animate_refresh'],
   'folder-stacks': ['folder_stacks_setup', 'layout', 'animate_refresh'],
+  'downloads-stack-view': ['folder_stacks_setup', 'layout', 'animate_refresh'],
+  'downloads-stack-sort': ['folder_stacks_setup', 'layout', 'animate_refresh'],
+  'downloads-stack-display': [
+    'folder_stacks_setup',
+    'layout',
+    'animate_refresh',
+  ],
   'dock-location': ['contrast', 'layout', 'recreate_docks', 'animate_preview'],
   'icon-resolution': [
     'icon_resolution',
@@ -168,7 +199,11 @@ const REACTIONS = Object.freeze({
   'pressure-sense': [],
   'downloads-icon': ['layout', 'animate_refresh'],
   'documents-icon': ['layout', 'animate_refresh'],
-  'trash-icon': ['layout', 'animate_refresh'],
+  'trash-icon': ['trash_style', 'layout', 'animate_refresh'],
+  'trash-style': ['trash_style', 'animate_refresh'],
+  'isolate-workspaces': ['windows_view', 'layout', 'animate_refresh'],
+  'minimized-window-tiles': ['windows_view', 'layout', 'animate_refresh'],
+  'file-drops': ['file_drops'],
 });
 
 export default class Dash2DockLiteExt extends Extension {
@@ -336,6 +371,9 @@ export default class Dash2DockLiteExt extends Extension {
     this._lastServicesUpdate = 0;
     this._onCheckServices();
 
+    this.windowFeedback = new WindowFeedback(this);
+    this.windowFeedback.enable();
+
     // after integrations/services exist: the settings switch uses them
     applySmokeSettings(this._settings);
 
@@ -346,8 +384,13 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateContrastColors();
     this._updateStyle();
     this._updateBlurredBackground();
+    this._updateFileDrops();
 
     this._addEvents();
+    this._updateHotkeysOverlay();
+    this.appSpread = new AppSpread();
+    this._windowEvents = new WindowEvents(() => this._onWindowsChanged());
+    this._updateWindowsView();
     this._queryDisplay();
     // this.startUp();
 
@@ -373,6 +416,8 @@ export default class Dash2DockLiteExt extends Extension {
     // null later
 
     this._removeEvents();
+    this._hotkeysOverlay?.destroy();
+    this._hotkeysOverlay = null;
     this._disableSettings();
 
     this._updateShrink(true);
@@ -380,8 +425,16 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateAutohide(true);
     this._unloadConfig();
     this._updateContrast(true);
+    this._updateFileDrops(true);
 
     this._showMainOverviewDash(true);
+
+    this.windowFeedback?.disable();
+    this.windowFeedback = null;
+    this._windowEvents?.destroy();
+    this._windowEvents = null;
+    this.appSpread?.destroy();
+    this.appSpread = null;
 
     this.destroyDocks();
     this.docks = [];
@@ -415,6 +468,12 @@ export default class Dash2DockLiteExt extends Extension {
     console.log('dash2dock-lite disabled');
 
     probe(this, 'after-disable', probeTimers);
+  }
+
+  // App-level attention request (e.g. Unity LauncherEntry `urgent`): true
+  // bounces the app's icon until it is focused, false withdraws the request.
+  onAppAttention(app, urgent) {
+    this.windowFeedback?.setAppAttention(app, urgent);
   }
 
   animate(settings = {}) {
@@ -707,6 +766,9 @@ export default class Dash2DockLiteExt extends Extension {
         });
       },
       folder_stacks_setup: () => this.services?.setupFolderStacks(),
+      trash_style: () => this.services?.updateTrashStyle(),
+      launcher_api: () => this.services?.setupLauncherEntries(),
+      file_drops: () => this._updateFileDrops(),
       mounts: () => {
         this.services?.checkMounts();
         this.services?._commitMounts();
@@ -715,6 +777,13 @@ export default class Dash2DockLiteExt extends Extension {
         this.services?.refreshFolderStacks();
         this.services?._debounceCheckRecents();
       },
+      recent_apps: () => {
+        this.docks?.forEach((dock) => dock.dash?._queueRedisplay());
+      },
+      keyboard_focus: () => {
+        this.docks?.forEach((dock) => dock._updateKeyboardFocus());
+      },
+      hotkeys_overlay: () => this._updateHotkeysOverlay(),
       animation_fps: () => this._updateAnimationFPS(),
       autohide: () => this._updateAutohide(),
       multi_monitor: () => this._updateMultiMonitorPreference(),
@@ -737,12 +806,14 @@ export default class Dash2DockLiteExt extends Extension {
           dock._updateIconEffectColor(this.icon_effect_color);
         });
       },
+      windows_view: () => this._updateWindowsView(),
       layout: () => this._updateLayout(),
       animate_refresh: () => this.animate({ refresh: true }),
       animate_preview: () => {
         if (this.animate_icons) this.animate({ preview: true });
       },
       animate: () => this.animate(),
+      window_feedback: () => this.windowFeedback?.update(),
     };
 
     for (const action of ACTION_ORDER) {
@@ -775,6 +846,18 @@ export default class Dash2DockLiteExt extends Extension {
   }
 
   _addEvents() {
+    // macOS ⌥⌘D. Mutter re-reads the accelerators from the key itself, so the
+    // default [] binds nothing and a later change needs no re-registration.
+    Main.wm.addKeybinding(
+      'toggle-autohide-shortcut',
+      this._settings,
+      Meta.KeyBindingFlags.NONE,
+      Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+      () => {
+        this._settings.set_boolean('autohide-dash', !this.autohide_dash);
+      }
+    );
+
     this._appSystem = Shell.AppSystem.get_default();
 
     this._appSystem.connectObject(
@@ -783,7 +866,8 @@ export default class Dash2DockLiteExt extends Extension {
         this._onAppsChanged();
       },
       'app-state-changed',
-      () => {
+      (appSystem, app) => {
+        this._rememberClosedApp(app);
         this._onAppsChanged();
       },
       this
@@ -854,15 +938,6 @@ export default class Dash2DockLiteExt extends Extension {
       this
     );
 
-    Main.messageTray.connectObject(
-      'queue-changed',
-      (count) => {
-        this.services.checkNotifications();
-        this.animate();
-      },
-      this
-    );
-
     global.display.connectObject(
       'notify::focus-window',
       this._onFocusWindow.bind(this),
@@ -909,13 +984,52 @@ export default class Dash2DockLiteExt extends Extension {
     );
   }
 
+  _updateHotkeysOverlay() {
+    if (this.hotkeys_overlay && !this._hotkeysOverlay) {
+      this._hotkeysOverlay = new HotkeysOverlay(this);
+    } else if (!this.hotkeys_overlay && this._hotkeysOverlay) {
+      this._hotkeysOverlay.destroy();
+      this._hotkeysOverlay = null;
+    }
+  }
+
+  // macOS "Show suggested and recent apps in Dock": an app that quits goes
+  // to the front of a persisted MRU list. Only tracked while the feature is
+  // on, so the default never writes dconf.
+  _rememberClosedApp(app) {
+    if (!this.recent_apps_count || !this._settings) return;
+    if (app?.state !== Shell.AppState.STOPPED) return;
+    let id = app.get_id();
+    if (!id || id.startsWith('window:')) return;
+    let ids = this._settings.get_strv('recent-apps').filter((i) => i !== id);
+    ids.unshift(id);
+    this._settings.set_strv('recent-apps', ids.slice(0, RECENT_APPS_KEPT));
+  }
+
+  // Apps the dock shows after the running ones: recently closed, not pinned,
+  // not running (a running app already has its own icon)
+  recentDockApps() {
+    let count = this.recent_apps_count;
+    if (!count || !this._settings || !this._appSystem) return [];
+    let favorites = Fav.getAppFavorites().getFavoriteMap();
+    let apps = [];
+    for (let id of this._settings.get_strv('recent-apps')) {
+      if (id in favorites) continue;
+      let app = this._appSystem.lookup_app(id);
+      if (!app || app.state !== Shell.AppState.STOPPED) continue;
+      apps.push(app);
+      if (apps.length >= count) break;
+    }
+    return apps;
+  }
+
   _removeEvents() {
+    Main.wm.removeKeybinding('toggle-autohide-shortcut');
     this._appSystem.disconnectObject(this);
     this._appSystem = null;
     this._appFavorites.disconnectObject(this);
     this._appFavorites = null;
     Main.extensionManager.disconnectObject(this);
-    Main.messageTray.disconnectObject(this);
     Main.overview.disconnectObject(this);
     Main.layoutManager.disconnectObject(this);
     Main.sessionMode.disconnectObject(this);
@@ -972,6 +1086,25 @@ export default class Dash2DockLiteExt extends Extension {
     listeners.forEach((l) => {
       if (l._onAppsChanged) l._onAppsChanged();
     });
+  }
+
+  // isolate-workspaces / minimized-window-tiles need window and workspace
+  // signals; connect them only while one of the two is on
+  _updateWindowsView() {
+    if (this.isolate_workspaces || this.minimized_window_tiles) {
+      this._windowEvents?.enable();
+    } else {
+      this._windowEvents?.disable();
+    }
+    this.docks?.forEach((dock) => {
+      // isolation toggled: the Dash re-reads its (filtered) running apps
+      dock.dash?._queueRedisplay();
+      dock._onWindowsChanged();
+    });
+  }
+
+  _onWindowsChanged() {
+    this.docks?.forEach((dock) => dock._onWindowsChanged());
   }
 
   _onMonitorsChanged() {
@@ -1118,6 +1251,26 @@ export default class Dash2DockLiteExt extends Extension {
       );
     } else {
       this._hiTimer.runDebounced(this._debounceStyleSeq);
+    }
+  }
+
+  // Owns the file-drop helper process while file-drops is on.
+  _updateFileDrops(disable) {
+    if (disable || !this.file_drops) {
+      this._fileDrops?.disable();
+      this._fileDrops = null;
+      return;
+    }
+    if (!this._fileDrops) {
+      // an optional extra: a failure here must not take the dock down
+      try {
+        this._fileDrops = new FileDrops(this);
+        this._fileDrops.enable();
+      } catch (err) {
+        console.error('d2da: file-drops', err);
+        this._fileDrops?.disable();
+        this._fileDrops = null;
+      }
     }
   }
 

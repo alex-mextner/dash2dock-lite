@@ -166,11 +166,27 @@ export let AutoHide = class {
     this.dock.slideOut();
   }
 
-
+  // A file drag from another client sends no pointer events to the dwell
+  // strip, so the features that follow such a drag (spring-loading,
+  // file-drops) reveal the dock through this one path; it stays up until
+  // every holder has let go.
+  holdForDrag(holder, held) {
+    this._dragHolders ??= new Set();
+    if (held) {
+      this._dragHolders.add(holder);
+      if (this._enabled && !this._shown) this.show();
+    } else if (this._dragHolders.delete(holder) && this._enabled) {
+      this._debounceCheckHide();
+    }
+  }
 
   _checkOverlap() {
     // console.log("checking overlap...");
     if (this.extension._inOverview) {
+      return false;
+    }
+    // a file drag holds the dock up (holdForDrag), even over a window
+    if (this._dragHolders?.size) {
       return false;
     }
     let pointer = global.get_pointer();
@@ -181,6 +197,16 @@ export let AutoHide = class {
     // console.log(pointer);
 
     if (!this.extension.autohide_dash) {
+      return false;
+    }
+
+    // keyboard-focus: a dock holding key focus stays up regardless of pointer
+    if (this.dock._keyFocusIcon) {
+      return false;
+    }
+
+    // an app asking for attention bounces on a shown dock (urgent-bounce)
+    if (this.extension.windowFeedback?.revealsDock) {
       return false;
     }
 

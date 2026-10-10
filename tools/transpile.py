@@ -59,6 +59,7 @@ importMap = [
     [ "import { Clock }", "const Clock = Me.imports.apps.clock.Clock;" ],
     [ "import { Calendar }", "const Calendar = Me.imports.apps.calendar.Calendar;" ],
     [ "import { Dot }", "const Dot = Me.imports.apps.dot.Dot;" ],
+    [ "import { GlassTrash }", "const GlassTrash = Me.imports.apps.trash.GlassTrash;" ],
     [ "import { PrefKeys }", "let { PrefKeys } = Me.imports.preferences.prefKeys;" ],
     [ "import { getPointer, warpPointer }", "const { getPointer, warpPointer } = Me.imports.utils;" ],
     [ "import {get_distance_sqr,get_distance,isInRect,isOverlapRect", "const { get_distance_sqr, get_distance, isInRect, isOverlapRect } = Me.imports.utils;" ],

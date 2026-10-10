@@ -76,6 +76,10 @@ export let PrefKeys = class {
           settings.set_value(name, new GLib.Variant('(dddd)', value));
           break;
         }
+        case 'strv': {
+          settings.set_strv(name, value);
+          break;
+        }
       }
     }
 
@@ -139,6 +143,12 @@ export let PrefKeys = class {
           case 'string':
             key.object.set_value(key.value);
             break;
+          // accelerator lists are edited as comma-separated text
+          case 'strv':
+            if (key.object.get_text() !== key.value.join(', ')) {
+              key.object.set_text(key.value.join(', '));
+            }
+            break;
           case 'color':
             key.object.set_rgba(
               this._toRGBA({
@@ -193,6 +203,10 @@ export let PrefKeys = class {
           key.value = settings.get_string(name);
           break;
         }
+        case 'strv': {
+          key.value = settings.get_strv(name);
+          break;
+        }
         case 'color': {
           key.value = settings.get_value(name).deepUnpack();
           break;
@@ -234,6 +248,10 @@ export let PrefKeys = class {
             }
             case 'string': {
               key.value = settings.get_string(name);
+              break;
+            }
+            case 'strv': {
+              key.value = settings.get_strv(name);
               break;
             }
           }
@@ -311,6 +329,18 @@ export let PrefKeys = class {
             if (self._syncing) return;
             let rgba = w.get_rgba();
             let value = [rgba.red, rgba.green, rgba.blue, rgba.alpha];
+            self.setValue(name, value);
+          });
+          break;
+        }
+        case 'strv': {
+          signal_id = key.object.connect('changed', (w) => {
+            if (self._syncing) return;
+            let value = w
+              .get_text()
+              .split(',')
+              .map((s) => s.trim())
+              .filter((s) => s.length);
             self.setValue(name, value);
           });
           break;
