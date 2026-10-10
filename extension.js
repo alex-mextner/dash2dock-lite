@@ -108,6 +108,13 @@ const REACTIONS = Object.freeze({
   'favorites-only': ['layout', 'animate_refresh'],
   'downloads-path': ['folder_stacks_setup', 'layout', 'animate_refresh'],
   'folder-stacks': ['folder_stacks_setup', 'layout', 'animate_refresh'],
+  'downloads-stack-view': ['folder_stacks_setup', 'layout', 'animate_refresh'],
+  'downloads-stack-sort': ['folder_stacks_setup', 'layout', 'animate_refresh'],
+  'downloads-stack-display': [
+    'folder_stacks_setup',
+    'layout',
+    'animate_refresh',
+  ],
   'dock-location': ['contrast', 'layout', 'recreate_docks', 'animate_preview'],
   'icon-resolution': [
     'icon_resolution',

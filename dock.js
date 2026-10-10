@@ -18,6 +18,7 @@ import { GlassPlatter } from './effects/glass.js';
 
 import { DockIcon, DockItemContainer, DockBackground } from './dockItems.js';
 import { DockItemList } from './dockItemMenu.js';
+import { setupStackItem } from './stackPanel.js';
 import { AutoHide } from './autohide.js';
 import { Animator } from './animator.js';
 import { live } from './probe.js';
@@ -424,7 +425,7 @@ export let Dock = GObject.registerClass(
     }
 
     slideOut() {
-      if (this._list && this._list.visible) {
+      if ((this._list && this._list.visible) || this._stackPanel) {
         return;
       }
       if (!this._hidden) {
@@ -1119,11 +1120,13 @@ export let Dock = GObject.registerClass(
           icon: `_folderStack:${stack.key}`,
           folder: stack.path,
           path: stack.app,
+          stack,
           prepare: () => services.checkFolderStack(stack),
           files: () => stack.files,
           total: () => stack.total,
         });
         item._folderStack = stack;
+        setupStackItem(this, item, stack);
         this._folderIcons.set(stack.key, item);
         this._icons = null;
         this._needsLayout = true;
@@ -1641,6 +1644,7 @@ export let Dock = GObject.registerClass(
       let list = this._list;
       this._list = null;
       list?.destroy();
+      this._stackPanel?.close();
     }
 
     _debounceEndAnimation() {

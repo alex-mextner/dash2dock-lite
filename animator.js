@@ -814,6 +814,8 @@ export let Animator = class {
         // label
         if (
           icon === hoveredIcon &&
+          // an open stack panel sits where the label would show
+          !dock._stackPanel &&
           icon._label &&
           icon._label.text &&
           icon._label.text.length

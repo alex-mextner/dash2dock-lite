@@ -229,7 +229,22 @@
     <key type="s" name="folder-stacks">
         <default>"[]"</default>
         <summary>Folder stacks</summary>
-        <description>JSON array of extra folders shown as stacks next to Downloads: "path" or {"path", "title", "icon"}</description>
+        <description>JSON array of extra folders shown as stacks next to Downloads: "path" or {"path", "title", "icon", "view", "sort", "display"}; view: fan|grid|list|automatic, sort: date-modified|name|date-added|date-created|kind, display: folder|stack</description>
+    </key>
+    <key type="i" name="downloads-stack-view">
+        <default>0</default>
+        <summary>Downloads stack view</summary>
+        <description>How the Downloads stack opens: 0 fan, 1 grid, 2 list, 3 automatic (fan if the files fit, else grid).</description>
+    </key>
+    <key type="i" name="downloads-stack-sort">
+        <default>0</default>
+        <summary>Downloads stack sort</summary>
+        <description>Downloads stack order: 0 date modified, 1 name, 2 date added, 3 date created, 4 kind.</description>
+    </key>
+    <key type="i" name="downloads-stack-display">
+        <default>0</default>
+        <summary>Downloads stack display</summary>
+        <description>Downloads dock icon: 0 the folder icon, 1 the top file (macOS "Display as Stack").</description>
     </key>
     <key type="i" name="max-recent-items">
         <default>0</default>

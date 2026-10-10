@@ -188,6 +188,24 @@ export const SettingsKeys = (patch) => {
       default_value: [],
       widget_type: 'json_array',
     },
+    'downloads-stack-view': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      options: ['fan', 'grid', 'list', 'automatic'],
+      test: { values: [0, 1, 2, 3] },
+    },
+    'downloads-stack-sort': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      options: ['date-modified', 'name', 'date-added', 'date-created', 'kind'],
+      test: { values: [0, 1, 2, 3, 4] },
+    },
+    'downloads-stack-display': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      options: ['folder', 'stack'],
+      test: { values: [0, 1] },
+    },
     'downloads-icon-rotate-labels': {
       default_value: false,
       widget_type: 'switch',

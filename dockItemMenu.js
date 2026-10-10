@@ -17,38 +17,9 @@ const Point = Graphene.Point;
 
 import { DockPosition } from './dock.js';
 import { Vector } from './vector.js';
+import { StackPanel, previewFile } from './stackPanel.js';
 
 const ANIM_POSITION_PER_SEC = 450 / 1000;
-
-// largest images decoded directly when no thumbnail exists yet
-const MAX_PREVIEW_BYTES = 16 * 1024 * 1024;
-
-// The freedesktop thumbnail of an image file, or the image itself if small
-// enough; null for anything that is not an image.
-function previewFile(item) {
-  if (!item.path || !item.type?.startsWith('image/')) {
-    return null;
-  }
-  let file = Gio.File.new_for_path(item.path);
-  let md5 = GLib.compute_checksum_for_string(
-    GLib.ChecksumType.MD5,
-    file.get_uri(),
-    -1
-  );
-  for (let size of ['large', 'normal']) {
-    let thumb = GLib.build_filenamev([
-      GLib.get_user_cache_dir(),
-      'thumbnails',
-      size,
-      `${md5}.png`,
-    ]);
-    if (GLib.file_test(thumb, GLib.FileTest.EXISTS)) {
-      return Gio.File.new_for_path(thumb);
-    }
-  }
-  let bytes = item.fileInfo?.get_size?.() ?? 0;
-  return bytes > 0 && bytes <= MAX_PREVIEW_BYTES ? file : null;
-}
 
 export const DockItemList = GObject.registerClass(
   {},
@@ -82,6 +53,22 @@ export const DockItemList = GObject.registerClass(
           return;
         }
         target._lastExecTime = now;
+        if (!f.files()) {
+          f.prepare();
+        }
+        let files = f.files() || [];
+        if (!files.length) return;
+        let maxFan = dock.extension.services?.maxFanItems() ?? 5;
+        let view = f.stack?.view ?? 'fan';
+        // Automatic, as in macOS: fan while the files fit in it, else grid
+        if (view === 'automatic') {
+          view = f.total() <= maxFan ? 'fan' : 'grid';
+        }
+        if (view === 'grid' || view === 'list') {
+          dock._destroyList();
+          dock._stackPanel = new StackPanel(dock, target, f.stack, files, view);
+          return;
+        }
         if (
           dock._position != DockPosition.BOTTOM &&
           dock._position != DockPosition.TOP
@@ -89,11 +76,7 @@ export const DockItemList = GObject.registerClass(
           target.activateNewWindow();
           return;
         }
-        if (!f.files()) {
-          f.prepare();
-        }
-        let files = [...(f.files() || [])];
-        if (!files.length) return;
+        files = files.slice(0, maxFan);
         if (files.length < f.total()) {
           files = [
             {

@@ -142,9 +142,48 @@
           </object>
         </child>
         <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Downloads View</property>
+            <property name="subtitle" translatable="yes">Open the Downloads stack as a fan, a grid, a list, or automatically.</property>
+            <property name="activatable-widget">downloads-stack-view</property>
+            <child>
+              <object class="GtkDropDown" id="downloads-stack-view">
+                <property name="valign">center</property>
+                <property name="model">downloads-stack-view-model</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Downloads Sort By</property>
+            <property name="subtitle" translatable="yes">Order of the files in the Downloads stack.</property>
+            <property name="activatable-widget">downloads-stack-sort</property>
+            <child>
+              <object class="GtkDropDown" id="downloads-stack-sort">
+                <property name="valign">center</property>
+                <property name="model">downloads-stack-sort-model</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Downloads Display As</property>
+            <property name="subtitle" translatable="yes">Show the folder icon, or the top file like a stack.</property>
+            <property name="activatable-widget">downloads-stack-display</property>
+            <child>
+              <object class="GtkDropDown" id="downloads-stack-display">
+                <property name="valign">center</property>
+                <property name="model">downloads-stack-display-model</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
           <object class="AdwExpanderRow" id="folder-stacks-row">
             <property name="title" translatable="yes">Folder Stacks</property>
-            <property name="subtitle" translatable="yes">More folders shown as stacks next to Downloads, newest files first.</property>
+            <property name="subtitle" translatable="yes">More folders shown as stacks next to Downloads. Right-click a stack in the dock for its sort order, icon and view.</property>
             <child type="suffix">
               <object class="GtkButton" id="folder-stacks-add">
                 <property name="valign">center</property>
@@ -273,6 +312,29 @@
       <item>15</item>
       <item>20</item>
       <item>25</item>
+    </items>
+  </object>
+  <object class="GtkStringList" id="downloads-stack-view-model">
+    <items>
+      <item translatable="yes">Fan</item>
+      <item translatable="yes">Grid</item>
+      <item translatable="yes">List</item>
+      <item translatable="yes">Automatic</item>
+    </items>
+  </object>
+  <object class="GtkStringList" id="downloads-stack-sort-model">
+    <items>
+      <item translatable="yes">Date Modified</item>
+      <item translatable="yes">Name</item>
+      <item translatable="yes">Date Added</item>
+      <item translatable="yes">Date Created</item>
+      <item translatable="yes">Kind</item>
+    </items>
+  </object>
+  <object class="GtkStringList" id="downloads-stack-display-model">
+    <items>
+      <item translatable="yes">Folder</item>
+      <item translatable="yes">Stack</item>
     </items>
   </object>
 </interface>

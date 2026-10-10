@@ -123,7 +123,8 @@ class DockItemMenu extends PopupMenu.PopupMenu {
 
   popup() {
     this.open(BoxPointer.PopupAnimation.FULL);
-    this._menuManager.ignoreRelease();
+    // PopupMenuManager.ignoreRelease() is gone in newer Shells
+    this._menuManager.ignoreRelease?.();
   }
 
   destroy() {
@@ -285,10 +286,24 @@ export const DockIcon = GObject.registerClass(
       }
     }
 
+    // A folder stack "Displayed as Stack" shows its top file instead of the
+    // folder icon; kept here so an icon re-created on resize keeps it.
+    setStackGicon(gicon) {
+      this._stackGicon = gicon;
+      if (!this._iconActor) return;
+      if (gicon) {
+        this._iconActor.gicon = gicon;
+      } else {
+        this._iconActor.icon_name = this._default_icon_name || 'file';
+      }
+    }
+
     _createIcon(size) {
       this._iconActor = new St.Icon({
         name: 'd2daDockIconActor',
-        icon_name: this._default_icon_name || 'file',
+        ...(this._stackGicon
+          ? { gicon: this._stackGicon }
+          : { icon_name: this._default_icon_name || 'file' }),
         icon_size: size,
         style_class: this._default_icon_style_class || '',
         track_hover: true,

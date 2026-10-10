@@ -11,10 +11,30 @@ import Graphene from 'gi://Graphene';
 
 import { Clock } from './apps/clock.js';
 import { Calendar } from './apps/calendar.js';
+import {
+  STACK_VIEWS,
+  STACK_SORTS,
+  STACK_DISPLAYS,
+  pick,
+} from './stackPanel.js';
 
 // sync with animator
 const CANVAS_SIZE = 120;
 const DEBOUNCE_CHECK_TIMEOUT = 750;
+
+// Grid/List panels list at most this many files of a folder stack
+const STACK_MAX_FILES = 200;
+
+const byName = (a, b) =>
+  a.name.localeCompare(b.name, undefined, { numeric: true });
+// macOS stack sort orders; dates newest first, ties by name
+const STACK_COMPARE = {
+  name: byName,
+  'date-modified': (a, b) => b.date.tv_sec - a.date.tv_sec || byName(a, b),
+  'date-added': (a, b) => b.created - a.created || byName(a, b),
+  'date-created': (a, b) => b.created - a.created || byName(a, b),
+  kind: (a, b) => (a.type ?? '').localeCompare(b.type ?? '') || byName(a, b),
+};
 
 // Directory monitor or null: Gio.File.monitor() throws ("Unable to find
 // default local file monitor type") once inotify instances run out, and that
@@ -169,6 +189,7 @@ export const Services = class {
     if (!downloads || !GLib.file_test(downloads, GLib.FileTest.IS_DIR)) {
       downloads = getDownloadsDir();
     }
+    let ext = this.extension;
     let stacks = [
       {
         key: 'downloads',
@@ -176,11 +197,16 @@ export const Services = class {
         title: 'Downloads',
         icon: this._folderIconName(Gio.File.new_for_path(downloads)),
         isDownloads: true,
+        view: STACK_VIEWS[ext.downloads_stack_view] ?? STACK_VIEWS[0],
+        sort: STACK_SORTS[ext.downloads_stack_sort] ?? STACK_SORTS[0],
+        display:
+          STACK_DISPLAYS[ext.downloads_stack_display] ?? STACK_DISPLAYS[0],
       },
     ];
 
-    // entries: "path" or { path, title?, icon? }; "~/" means the home folder
-    (this.extension.folder_stacks || []).forEach((entry) => {
+    // entries: "path" or { path, title?, icon?, view?, sort?, display? };
+    // "~/" means the home folder
+    (ext.folder_stacks || []).forEach((entry, entryIndex) => {
       let spec = typeof entry === 'string' ? { path: entry } : entry;
       if (!spec || typeof spec.path !== 'string') {
         return;
@@ -200,6 +226,11 @@ export const Services = class {
         path,
         title: spec.title || this._folderDisplayName(dir),
         icon: spec.icon || this._folderIconName(dir),
+        // the stack's menu rewrites this entry of folder-stacks
+        entryIndex,
+        view: pick(spec.view, STACK_VIEWS),
+        sort: pick(spec.sort, STACK_SORTS),
+        display: pick(spec.display, STACK_DISPLAYS),
       });
     });
 
@@ -513,10 +544,18 @@ export const Services = class {
     }
   }
 
-  async checkRecentFilesInFolder(path) {
-    console.log(`checking ${path}`);
+  // the fan shows at most this many files (+ "More..."), as upstream
+  maxFanItems() {
     let maxs = [5, 8, 10, 12, 15, 20, 25];
-    let max_recent_items = maxs[this.extension.max_recent_items || 0];
+    return maxs[this.extension.max_recent_items || 0];
+  }
+
+  // Files of a stack folder in the stack's sort order: up to STACK_MAX_FILES
+  // for the Grid/List panels (the fan takes the first maxFanItems()) and the
+  // total count.
+  async checkRecentFilesInFolder(path, sort = 'date-modified') {
+    console.log(`checking ${path}`);
+    let max_recent_items = STACK_MAX_FILES;
     let downloadFiles = [];
     let downloadFilesLength = 0;
 
@@ -529,6 +568,7 @@ export const Services = class {
           Gio.FILE_ATTRIBUTE_STANDARD_NAME,
           Gio.FILE_ATTRIBUTE_STANDARD_ICON,
           Gio.FILE_ATTRIBUTE_TIME_MODIFIED,
+          Gio.FILE_ATTRIBUTE_TIME_CREATED,
           Gio.FILE_ATTRIBUTE_STANDARD_SIZE,
           Gio.FILE_ATTRIBUTE_STANDARD_IS_HIDDEN,
         ].join(','),
@@ -562,14 +602,18 @@ export const Services = class {
           type: fileInfo.get_content_type(),
           path: GLib.build_filenamev([path, fileName]),
           date: fileModified ?? { tv_sec: 0 },
+          // btime; GLib has no "date added", and moving a file in keeps its
+          // btime on the same filesystem, so creation stands in for it.
+          // Filesystems without btime fall back to the modification time.
+          created: fileInfo.has_attribute(Gio.FILE_ATTRIBUTE_TIME_CREATED)
+            ? fileInfo.get_attribute_uint64(Gio.FILE_ATTRIBUTE_TIME_CREATED)
+            : (fileModified?.tv_sec ?? 0),
           fileInfo: fileInfo,
         });
       }
 
       downloadFilesLength = downloadFiles.length;
-      downloadFiles.sort((a, b) => {
-        return a.date.tv_sec > b.date.tv_sec ? -1 : 1;
-      });
+      downloadFiles.sort(STACK_COMPARE[sort] ?? STACK_COMPARE['date-modified']);
 
       let index = 0;
       downloadFiles.forEach((f) => {
@@ -759,8 +803,10 @@ export const Services = class {
   async checkFolderStack(stack) {
     try {
       [stack.files, stack.total] = await this.checkRecentFilesInFolder(
-        stack.path
+        stack.path,
+        stack.sort
       );
+      stack.fileListeners?.forEach((listener) => listener());
     } catch (err) {
       if (
         this._cancellable?.is_cancelled() ||
