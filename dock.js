@@ -27,6 +27,7 @@ import {
   onActiveWorkspace,
   runningApps,
   syncMinimizedTiles,
+  syncShowAllWindowsItem,
 } from './windowsView.js';
 
 const Point = Graphene.Point;
@@ -995,6 +996,24 @@ export let Dock = GObject.registerClass(
             }
           };
         }
+        // Shell AppIcon menus only (our own items have DockItemMenu)
+        if (c._appwell && !c.custom_icon && !c._appwell._popupMenu) {
+          let appwell = c._appwell;
+          appwell._popupMenu = appwell.popupMenu;
+          appwell.popupMenu = (...args) => {
+            let ret = appwell._popupMenu(...args);
+            try {
+              syncShowAllWindowsItem(
+                appwell,
+                this.extension.show_all_windows_item,
+                (app) => this.extension.appSpread?.toggle(app)
+              );
+            } catch (e) {
+              console.error('d2da: show all windows item', e);
+            }
+            return ret;
+          };
+        }
         let icon = c._icon;
         if (icon && !icon._destroyConnectId) {
           icon._destroyConnectId = icon.connect('destroy', () => {
@@ -1706,11 +1725,14 @@ export let Dock = GObject.registerClass(
       });
     }
 
-    // Activation of a running or stopped app's icon. Workspace isolation is
-    // opt-in; otherwise the Shell's own AppIcon.activate runs, after the
-    // minimize/maximize handling.
+    // Activation of a running or stopped app's icon. Spread-on-click and
+    // workspace isolation are opt-in; otherwise the Shell's own
+    // AppIcon.activate runs, after the minimize/maximize handling.
     _activateAppIcon(appwell, button) {
       let app = appwell.app;
+      if (this._spreadOnClick(app, button)) {
+        return;
+      }
       this._maybeMinimizeOrMaximize(app, button);
       if (
         this.extension.isolate_workspaces &&
@@ -1734,6 +1756,25 @@ export let Dock = GObject.registerClass(
         }
       }
       return appwell._activate(button);
+    }
+
+    // click-action-spread: a click on the focused app that has several
+    // windows opens its spread (Ubuntu Dock 'focus-or-appspread'), so the
+    // first click still just focuses the app.
+    _spreadOnClick(app, button) {
+      if (!this.extension.click_action_spread || !app?.get_windows) {
+        return false;
+      }
+      let { shift, openNewWindow } = this._clickState(app, button);
+      if (shift || openNewWindow) {
+        return false;
+      }
+      let windows = this.getAppWindowsFiltered(app);
+      if (windows.length < 2 || !windows.some((w) => w.has_focus())) {
+        return false;
+      }
+      this.extension.appSpread?.toggle(app);
+      return true;
     }
 
     _clickState(app, button) {

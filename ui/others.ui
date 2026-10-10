@@ -34,6 +34,30 @@
         </child>
         <child>
           <object class="AdwActionRow">
+            <property name="title" translatable="yes">Click Shows App Windows</property>
+            <property name="subtitle" translatable="yes">Clicking the focused app's icon when it has several windows shows only its windows (App Exposé).</property>
+            <property name="activatable-widget">click-action-spread</property>
+            <child>
+              <object class="GtkSwitch" id="click-action-spread">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
+            <property name="title" translatable="yes">Show All Windows Menu Item</property>
+            <property name="subtitle" translatable="yes">Add &quot;Show All Windows&quot; (App Exposé) to the app icon menu.</property>
+            <property name="activatable-widget">show-all-windows-item</property>
+            <child>
+              <object class="GtkSwitch" id="show-all-windows-item">
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow">
             <property name="title" translatable="yes">Isolate Workspaces</property>
             <property name="subtitle" translatable="yes">Only show running apps and indicators for windows on the current workspace.</property>
             <property name="activatable-widget">isolate-workspaces</property>

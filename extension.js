@@ -39,7 +39,7 @@ import { runTests } from './diagnostics.js';
 import { probe, applySmokeSettings } from './probe.js';
 import * as Compat from './compat.js';
 import { WallpaperTone, markColors } from './contrast.js';
-import { WindowEvents } from './windowsView.js';
+import { AppSpread, WindowEvents } from './windowsView.js';
 
 import {
   Extension,
@@ -352,6 +352,7 @@ export default class Dash2DockLiteExt extends Extension {
     this._updateBlurredBackground();
 
     this._addEvents();
+    this.appSpread = new AppSpread();
     this._windowEvents = new WindowEvents(() => this._onWindowsChanged());
     this._updateWindowsView();
     this._queryDisplay();
@@ -391,6 +392,8 @@ export default class Dash2DockLiteExt extends Extension {
 
     this._windowEvents?.destroy();
     this._windowEvents = null;
+    this.appSpread?.destroy();
+    this.appSpread = null;
 
     this.destroyDocks();
     this.docks = [];

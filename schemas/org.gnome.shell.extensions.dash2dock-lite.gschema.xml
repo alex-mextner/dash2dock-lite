@@ -331,6 +331,16 @@
         <summary>Click minimizes focused app</summary>
         <description>Clicking the icon of the focused app minimizes its windows. Off: the click does nothing, as on macOS.</description>
     </key>
+    <key type="b" name="click-action-spread">
+        <default>false</default>
+        <summary>Click spreads app windows</summary>
+        <description>Clicking the icon of the focused app that has several windows shows only its windows (Ubuntu Dock focus-or-appspread). Off: the click focuses or minimizes as usual.</description>
+    </key>
+    <key type="b" name="show-all-windows-item">
+        <default>false</default>
+        <summary>Show All Windows menu item</summary>
+        <description>Add &quot;Show All Windows&quot; to the app icon menu: an overview showing only that app's windows, as on macOS.</description>
+    </key>
     <key type="b" name="isolate-workspaces">
         <default>false</default>
         <summary>Isolate workspaces</summary>

@@ -164,6 +164,14 @@ export const SettingsKeys = (patch) => {
       default_value: true,
       widget_type: 'switch',
     },
+    'click-action-spread': {
+      default_value: false,
+      widget_type: 'switch',
+    },
+    'show-all-windows-item': {
+      default_value: false,
+      widget_type: 'switch',
+    },
     'isolate-workspaces': {
       default_value: false,
       widget_type: 'switch',

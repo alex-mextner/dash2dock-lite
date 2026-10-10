@@ -9,8 +9,17 @@
 // * MinimizedTile (macOS "Minimize windows into application icon" = off): a
 //   dock item showing a live Clutter.Clone of a minimized window with the app
 //   icon as an emblem, placed between the folder stacks and the Trash.
+// * AppSpread ("Show All Windows", macOS App Exposé, Ubuntu Dock appspread):
+//   the Shell overview window picker showing only one app's windows. It reuses
+//   the Shell's own Workspace window clones (GPU), filtered by patching the
+//   `_isOverviewWindow` predicate while the spread is open. The workspace views
+//   and thumbnails are rebuilt each time the overview opens, so the filter
+//   takes effect on show and is dropped on 'hidden'.
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+import * as Workspace from 'resource:///org/gnome/shell/ui/workspace.js';
+import * as WorkspaceThumbnail from 'resource:///org/gnome/shell/ui/workspaceThumbnail.js';
 
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
@@ -304,5 +313,97 @@ class MinimizedTile {
       item.destroy();
     }
     actor?.destroy();
+  }
+}
+
+// "Show All Windows" in the Shell AppMenu of an app icon, right below the
+// open-windows list (where macOS has it).
+export function syncShowAllWindowsItem(appwell, visible, onActivate) {
+  let menu = appwell?._menu;
+  if (!menu) return;
+  if (!menu._d2daShowAllWindowsItem) {
+    let item = new PopupMenu.PopupMenuItem('Show All Windows');
+    item.connect('activate', () => onActivate(appwell.app));
+    let items = menu._getMenuItems();
+    let section = items.indexOf(menu._windowSection);
+    menu.addMenuItem(item, section >= 0 ? section + 1 : undefined);
+    menu._d2daShowAllWindowsItem = item;
+  }
+  menu._d2daShowAllWindowsItem.visible =
+    visible && appwell.app.get_n_windows() > 0;
+}
+
+export class AppSpread {
+  constructor() {
+    this._app = null;
+    this._restores = null;
+  }
+
+  get app() {
+    return this._app;
+  }
+
+  // Opens the spread for app; called while a spread is open it closes it, so
+  // the same click/menu item toggles like App Exposé.
+  toggle(app) {
+    if (this._app) {
+      Main.overview.hide();
+      return;
+    }
+    if (!app || !app.get_n_windows()) return;
+    if (Main.overview.visible) {
+      // the views of an open overview are not rebuilt, the filter would not apply
+      Main.overview.hide();
+      return;
+    }
+
+    let tracker = Shell.WindowTracker.get_default();
+    let ofApp = (metaWindow) => tracker.get_window_app(metaWindow) === app;
+
+    let workspace = Workspace.Workspace.prototype;
+    let thumbnail = WorkspaceThumbnail.WorkspaceThumbnail.prototype;
+    let workspaceTest = workspace._isOverviewWindow;
+    let thumbnailTest = thumbnail._isOverviewWindow;
+    workspace._isOverviewWindow = function (metaWindow) {
+      return ofApp(metaWindow) && workspaceTest.call(this, metaWindow);
+    };
+    thumbnail._isOverviewWindow = function (windowActor) {
+      return (
+        ofApp(windowActor.get_meta_window()) &&
+        thumbnailTest.call(this, windowActor)
+      );
+    };
+    this._restores = [
+      () => (workspace._isOverviewWindow = workspaceTest),
+      () => (thumbnail._isOverviewWindow = thumbnailTest),
+    ];
+    this._app = app;
+
+    Main.overview.connectObject('hidden', () => this._restore(), this);
+    // App Exposé has no search; an empty search bar over the spread invites one
+    let entry = Main.overview.searchEntry;
+    if (entry) {
+      let opacity = entry.opacity;
+      entry.opacity = 0;
+      this._restores.push(() => (entry.opacity = opacity));
+    }
+
+    Main.overview.show();
+    // show() is a no-op e.g. on the lock screen: no 'hidden' will come
+    if (!Main.overview.visible) this._restore();
+  }
+
+  _restore() {
+    if (!this._app) return;
+    Main.overview.disconnectObject(this);
+    this._restores.forEach((restore) => restore());
+    this._restores = null;
+    this._app = null;
+  }
+
+  destroy() {
+    let open = !!this._app;
+    this._restore();
+    if (open && Main.overview.visible) Main.overview.hide();
   }
 }
