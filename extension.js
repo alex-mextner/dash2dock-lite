@@ -172,6 +172,7 @@ const REACTIONS = Object.freeze({
   'documents-icon': ['layout', 'animate_refresh'],
   'trash-icon': ['layout', 'animate_refresh'],
   'isolate-workspaces': ['windows_view', 'layout', 'animate_refresh'],
+  'minimized-window-tiles': ['windows_view', 'layout', 'animate_refresh'],
 });
 
 export default class Dash2DockLiteExt extends Extension {
@@ -983,10 +984,10 @@ export default class Dash2DockLiteExt extends Extension {
     });
   }
 
-  // isolate-workspaces needs window and workspace signals; connect them
-  // only while it is on
+  // isolate-workspaces / minimized-window-tiles need window and workspace
+  // signals; connect them only while one of the two is on
   _updateWindowsView() {
-    if (this.isolate_workspaces) {
+    if (this.isolate_workspaces || this.minimized_window_tiles) {
       this._windowEvents?.enable();
     } else {
       this._windowEvents?.disable();

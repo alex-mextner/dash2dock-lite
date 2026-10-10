@@ -26,6 +26,7 @@ import {
   filterDashRunningApps,
   onActiveWorkspace,
   runningApps,
+  syncMinimizedTiles,
 } from './windowsView.js';
 
 const Point = Graphene.Point;
@@ -186,6 +187,8 @@ export let Dock = GObject.registerClass(
       if (this.dash) {
         // the list may point at a folder stack item that goes with the dash
         this._destroyList();
+        this._minimizedTiles?.forEach((tile) => tile.destroy());
+        this._minimizedTiles = null;
 
         // every item, also those _findIcons() skips (hidden non-favorites)
         let box = Compat.getDashBox(this.dash);
@@ -1158,10 +1161,15 @@ export let Dock = GObject.registerClass(
           this._needsLayout = true;
         }
       }
+
+      //---------------
+      // minimized-window tiles, between the stacks and the Trash
+      //---------------
+      this._minimizedTiles = syncMinimizedTiles(this, this._minimizedTiles);
     }
 
-    // Windows/workspace changed (WindowEvents): re-filter the running apps
-    // and redraw the dots.
+    // Windows/workspace changed (WindowEvents, minimized tiles): re-filter the
+    // running apps, re-sync the tiles and redraw the dots.
     _onWindowsChanged() {
       if (this.extension.isolate_workspaces) {
         this.dash?._queueRedisplay();

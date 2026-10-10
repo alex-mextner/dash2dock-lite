@@ -956,6 +956,9 @@ export let Animator = class {
           dock,
         });
       }
+
+      // minimized-window tiles draw a window clone over the renderer
+      icon._minimizedTile?.sync(icon);
     });
 
     // separators
