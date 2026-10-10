@@ -53,6 +53,10 @@ const ANIM_ICON_QUALITY = 2.0;
 const ANIM_INTERVAL = 15;
 const ANIM_INTERVAL_PAD = 15;
 
+// MRU length kept in dconf; above the largest recent-apps-count so pinned
+// or running apps in the list still leave enough candidates
+const RECENT_APPS_KEPT = 10;
+
 const ACTION_ORDER = [
   'compiz',
   'bms',
@@ -61,6 +65,7 @@ const ACTION_ORDER = [
   'folder_stacks_setup',
   'mounts',
   'recents_debounce',
+  'recent_apps',
   'animation_fps',
   'autohide',
   'multi_monitor',
@@ -106,6 +111,7 @@ const REACTIONS = Object.freeze({
   'calendar-icon': ['layout', 'animate_refresh'],
   'clock-icon': ['layout', 'animate_refresh'],
   'favorites-only': ['layout', 'animate_refresh'],
+  'recent-apps-count': ['recent_apps', 'layout', 'animate_refresh'],
   'downloads-path': ['folder_stacks_setup', 'layout', 'animate_refresh'],
   'folder-stacks': ['folder_stacks_setup', 'layout', 'animate_refresh'],
   'dock-location': ['contrast', 'layout', 'recreate_docks', 'animate_preview'],
@@ -715,6 +721,9 @@ export default class Dash2DockLiteExt extends Extension {
         this.services?.refreshFolderStacks();
         this.services?._debounceCheckRecents();
       },
+      recent_apps: () => {
+        this.docks?.forEach((dock) => dock.dash?._queueRedisplay());
+      },
       animation_fps: () => this._updateAnimationFPS(),
       autohide: () => this._updateAutohide(),
       multi_monitor: () => this._updateMultiMonitorPreference(),
@@ -783,7 +792,8 @@ export default class Dash2DockLiteExt extends Extension {
         this._onAppsChanged();
       },
       'app-state-changed',
-      () => {
+      (appSystem, app) => {
+        this._rememberClosedApp(app);
         this._onAppsChanged();
       },
       this
@@ -907,6 +917,36 @@ export default class Dash2DockLiteExt extends Extension {
       SERVICES_UPDATE_INTERVAL,
       'services'
     );
+  }
+
+  // macOS "Show suggested and recent apps in Dock": an app that quits goes
+  // to the front of a persisted MRU list. Only tracked while the feature is
+  // on, so the default never writes dconf.
+  _rememberClosedApp(app) {
+    if (!this.recent_apps_count || !this._settings) return;
+    if (app?.state !== Shell.AppState.STOPPED) return;
+    let id = app.get_id();
+    if (!id || id.startsWith('window:')) return;
+    let ids = this._settings.get_strv('recent-apps').filter((i) => i !== id);
+    ids.unshift(id);
+    this._settings.set_strv('recent-apps', ids.slice(0, RECENT_APPS_KEPT));
+  }
+
+  // Apps the dock shows after the running ones: recently closed, not pinned,
+  // not running (a running app already has its own icon)
+  recentDockApps() {
+    let count = this.recent_apps_count;
+    if (!count || !this._settings || !this._appSystem) return [];
+    let favorites = Fav.getAppFavorites().getFavoriteMap();
+    let apps = [];
+    for (let id of this._settings.get_strv('recent-apps')) {
+      if (id in favorites) continue;
+      let app = this._appSystem.lookup_app(id);
+      if (!app || app.state !== Shell.AppState.STOPPED) continue;
+      apps.push(app);
+      if (apps.length >= count) break;
+    }
+    return apps;
   }
 
   _removeEvents() {

@@ -455,6 +455,21 @@ export let Dock = GObject.registerClass(
 
       Compat.setupDashProxy(dash);
 
+      // Dash._redisplay() reads only get_running() from _appSystem (its
+      // signals are connected already): appending the recent apps there
+      // gives them real AppIcons after the running ones, behind the same
+      // separator, and they turn into running icons on launch by themselves
+      let appSystem = dash._appSystem;
+      if (appSystem) {
+        dash._appSystem = {
+          get_running: () => {
+            let running = appSystem.get_running();
+            let recent = this.extension.recentDockApps();
+            return recent.length ? running.concat(recent) : running;
+          },
+        };
+      }
+
       this.dash = dash;
       let dashBg = Compat.getDashBackground(this.dash);
       if (dashBg) {
@@ -637,6 +652,7 @@ export let Dock = GObject.registerClass(
           apps += Shell.AppSystem.get_default()
             .get_running()
             .filter((app) => !(app.get_id() in favorites)).length;
+          apps += this.extension.recentDockApps().length;
         }
       } catch {
         // fall back to the actors found

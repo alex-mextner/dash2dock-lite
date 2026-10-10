@@ -169,6 +169,11 @@ export const SettingsKeys = (patch) => {
       widget_type: 'dropdown',
       test: { values: [0, 1] },
     },
+    'recent-apps-count': {
+      default_value: 0,
+      widget_type: 'dropdown',
+      test: { values: [0, 1, 2, 3, 4, 5] },
+    },
     'apps-icon': {
       default_value: true,
       widget_type: 'switch',
