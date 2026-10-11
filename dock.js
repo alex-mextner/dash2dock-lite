@@ -75,7 +75,13 @@ export let Dock = GObject.registerClass(
 
       this.extension = params.extension;
       live('dock', 1);
-      this.connect('destroy', () => live('dock', -1));
+      // Shell exit never calls disable(): the stage disposes this dock from C
+      // (no JS destroy()), then Shell's 'shutdown' handler spins a nested main
+      // loop where a live subscription would tick on disposed actors.
+      this.connect('destroy', () => {
+        live('dock', -1);
+        this._cancelTimers();
+      });
 
       this._alignment = DockAlignment.CENTER;
       this._monitorIndex = Main.layoutManager.primaryIndex;
@@ -287,12 +293,27 @@ export let Dock = GObject.registerClass(
       this.animator.disable();
 
       // autohider.disable() -> show() -> slideIn() may re-arm these
-      this.extension._hiTimer?.cancel(this._animationSeq);
-      this.extension._loTimer?.cancel(this.debounceEndSeq);
-      this.extension._loTimer?.cancel(this._debounceBeginAnimateSeq);
+      this._cancelTimers();
+    }
+
+    // every hi/lo-timer subscription that drives this dock's actors
+    _cancelTimers() {
+      const hi = this.extension._hiTimer;
+      const lo = this.extension._loTimer;
+      hi?.cancel(this._animationSeq);
+      lo?.cancel(this.debounceEndSeq);
+      lo?.cancel(this._debounceBeginAnimateSeq);
       this._animationSeq = null;
       this.debounceEndSeq = null;
       this._debounceBeginAnimateSeq = null;
+      this.animator?.cancelBounces();
+      const autohider = this.autohider;
+      if (autohider) {
+        hi?.cancel(autohider._animationSeq);
+        lo?.cancel(autohider._debounceCheckSeq);
+        autohider._animationSeq = null;
+        autohider._debounceCheckSeq = null;
+      }
     }
 
     // connectObject handlers receive (actor, event)

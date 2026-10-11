@@ -1284,7 +1284,7 @@ export let Animator = class {
       });
     }
 
-    dock.extension._hiTimer.runAnimation([
+    const bounce = dock.extension._hiTimer.runAnimation([
       ...frames,
       {
         _duration: 10,
@@ -1317,5 +1317,17 @@ export let Animator = class {
         },
       },
     ]);
+    // only finished ones leave the timer on their own
+    this._bounces ??= new Set();
+    this._bounces.forEach((b) => {
+      if (b._time >= b._duration) this._bounces.delete(b);
+    });
+    this._bounces.add(bounce);
+  }
+
+  // for the dock's _cancelTimers(): a bounce drives the dock's icons
+  cancelBounces() {
+    this._bounces?.forEach((b) => b._timer?.cancel(b));
+    this._bounces?.clear();
   }
 };
