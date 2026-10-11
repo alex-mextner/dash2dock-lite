@@ -8,7 +8,9 @@
 // and a fragment shader maps every pixel back into the window texture through
 // the inverse genie, discarding pixels outside the shape. A frame costs one
 // uniform write (d2da_t) and one paint node, as for any offscreen effect: no
-// pixels read back and no CPU geometry.
+// pixels read back and no CPU geometry. The target is re-measured each frame
+// and the geometry redone only when it moved: the dock can open or close a
+// slot while the window flies (another window minimized or restored).
 //
 // Clutter.DeformEffect would be the obvious base, but on Mutter 50 it paints
 // nothing at all (also its C subclass Clutter.PageTurnEffect).
@@ -105,10 +107,25 @@ const GenieEffect = GObject.registerClass(
       this._paintBox = paintBox;
       this._target = target;
       this._pipeline = null;
+      this._placed = false;
       this._rect = null; // Clutter.ActorBox drawn each frame
       this._texCoords = null; // [x1, y1, x2, y2]
       this._tLocation = -1;
       this.progress = 0;
+    }
+
+    retarget(target) {
+      let t = this._target;
+      if (
+        t.x === target.x &&
+        t.y === target.y &&
+        t.width === target.width &&
+        t.height === target.height &&
+        t.side === target.side
+      )
+        return;
+      this._target = target;
+      this._placed = false;
     }
 
     // the genie reaches the dock, far outside the window: let Clutter
@@ -119,11 +136,17 @@ const GenieEffect = GObject.registerClass(
 
     // Clutter consumes a paint node's operations when it paints it, so a
     // node is built per frame, as OffscreenEffect itself does; the geometry
-    // is computed once.
+    // only when the pipeline or the target changes.
     vfunc_paint_target(node, _paintContext) {
       let pipeline = this.get_pipeline();
       if (!pipeline) return;
-      if (pipeline !== this._pipeline) this._setUp(pipeline);
+      if (pipeline !== this._pipeline) {
+        // once per pipeline (normally once per animation)
+        this._pipeline = pipeline;
+        pipeline.add_snippet(this._snippet);
+        this._placed = false;
+      }
+      if (!this._placed) this._place(pipeline);
       pipeline.set_uniform_1f(this._tLocation, this.progress);
       let [tx1, ty1, tx2, ty2] = this._texCoords;
       let pipelineNode = Clutter.PipelineNode.new(pipeline);
@@ -131,10 +154,9 @@ const GenieEffect = GObject.registerClass(
       node.add_child(pipelineNode);
     }
 
-    // once per pipeline (normally once per animation)
-    _setUp(pipeline) {
-      this._pipeline = pipeline;
-      pipeline.add_snippet(this._snippet);
+    // the window and target geometry: once per pipeline and target
+    _place(pipeline) {
+      this._placed = true;
 
       // Where the texture lies on stage, as OffscreenEffect sized it:
       // the paint box padded out and quantized (clutter-actor-box.c), in
@@ -312,6 +334,8 @@ export class Genie {
       () => {
         let p = timeline.get_progress();
         effect.progress = minimize ? p : 1 - p;
+        let current = actor.meta_window && this._targetFor(actor.meta_window);
+        if (current) effect.retarget(current);
         effect.queue_repaint();
       },
       'stopped',
