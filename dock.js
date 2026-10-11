@@ -77,10 +77,21 @@ export let Dock = GObject.registerClass(
       live('dock', 1);
       // Shell exit never calls disable(): the stage disposes this dock from C
       // (no JS destroy()), then Shell's 'shutdown' handler spins a nested main
-      // loop where a live subscription would tick on disposed actors.
+      // loop where a live subscription would tick on disposed actors, and
+      // window/restack signals still reach whatever lists the dock.
       this.connect('destroy', () => {
         live('dock', -1);
+        this._destroyed = true;
+        // children go after this handler; their own destroy handlers then
+        // find renderArea's actors (clock/calendar) already disposed
+        this._disposed = true;
         this._cancelTimers();
+        const ext = this.extension;
+        if (ext.docks) ext.docks = ext.docks.filter((d) => d !== this);
+        if (ext.listeners) {
+          ext.listeners = ext.listeners.filter((l) => l !== this);
+        }
+        if (ext.dock === this) ext.dock = ext.docks?.[0] ?? null;
       });
 
       this._alignment = DockAlignment.CENTER;
@@ -931,7 +942,8 @@ export let Dock = GObject.registerClass(
         c._calendar = null;
         if (this._clock === image) this._clock = null;
         if (this._calendar === image) this._calendar = null;
-        image.destroy();
+        // under a disposing dock it is (or will be) gone with renderArea
+        if (!this._disposed) image.destroy();
       }
       // DockItemContainer menu; idempotent, also run on the item's own destroy
       c._destroyMenu?.();
@@ -1809,6 +1821,7 @@ export let Dock = GObject.registerClass(
     }
 
     _beginAnimation(caller) {
+      if (this._destroyed) return;
       if (this.extension.debug_visual) {
         this.add_style_class_name('hi');
         this.struts.add_style_class_name('hi');
