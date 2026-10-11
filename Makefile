@@ -1,12 +1,13 @@
 all: build install lint
 
-.PHONY: build install publish check-devkit test-shell test-shell2 check smoke lint check-settings
+.PHONY: build install publish check-devkit check-install-dir test-shell test-shell2 check smoke lint check-settings build-g44
 
 RUNTIME_DIR ?= $(or $(XDG_RUNTIME_DIR),/run/user/$(shell id -u))
 # gnome-shell writes this at startup as a crash marker; if it is left behind
 # (e.g. nested shell killed early) the next run starts with all extensions off.
 DISABLE_EXT_FLAG = $(RUNTIME_DIR)/gnome-shell-disable-extensions
 MUTTER_DEVKIT ?= /usr/libexec/mutter-devkit
+EXT_DIR = $(HOME)/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com
 
 # GNOME 49+: `gnome-shell --devkit` runs headless and spawns mutter-devkit as
 # the viewer window. Without it the shell runs but no window ever appears.
@@ -16,24 +17,33 @@ check-devkit:
 		echo "       install it: sudo dnf install mutter-devkit"; \
 		exit 1; }
 
+# A symlinked EXT_DIR is a live checkout (e.g. the ubuntu-tweaks submodule):
+# `rm -rf $(EXT_DIR)/` follows the link and empties that checkout. The
+# install targets stop here instead; remove the link to install a copy.
+check-install-dir:
+	@if [ -L "$(EXT_DIR)" ]; then \
+		echo "error: $(EXT_DIR) is a symlink to $$(readlink -f "$(EXT_DIR)")"; \
+		echo "       refusing to install over it; rm the link (not the target) first"; \
+		exit 1; fi
+
 build:
 	glib-compile-schemas --strict --targetdir=schemas/ schemas
 
-install: build
+install: build check-install-dir
 	echo "installing..."
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/
-	mkdir -p ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/
-	cp -R ./* ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/build
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/Makefile
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/tests
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/tools
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/screenshots
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/node_modules
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/agents
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/eslint.config.js
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/package.json
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/package-lock.json
+	rm -rf "$(EXT_DIR)/"
+	mkdir -p "$(EXT_DIR)/"
+	cp -R ./* "$(EXT_DIR)/"
+	rm -rf "$(EXT_DIR)/build"
+	rm -rf "$(EXT_DIR)/Makefile"
+	rm -rf "$(EXT_DIR)/tests"
+	rm -rf "$(EXT_DIR)/tools"
+	rm -rf "$(EXT_DIR)/screenshots"
+	rm -rf "$(EXT_DIR)/node_modules"
+	rm -rf "$(EXT_DIR)/agents"
+	rm -rf "$(EXT_DIR)/eslint.config.js"
+	rm -rf "$(EXT_DIR)/package.json"
+	rm -rf "$(EXT_DIR)/package-lock.json"
 
 clean:
 	rm -rf ./build
@@ -41,11 +51,11 @@ clean:
 publish:
 	./tools/publish.sh $(VERSION)
 
-install-zip:
+install-zip: check-install-dir
 	echo "installing zip..."
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com
-	mkdir -p ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/
-	unzip -q dash2dock-lite@icedman.github.com.zip -d ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/
+	rm -rf "$(EXT_DIR)"
+	mkdir -p "$(EXT_DIR)/"
+	unzip -q dash2dock-lite@icedman.github.com.zip -d "$(EXT_DIR)/"
 
 test-prefs:
 	gnome-extensions prefs dash2dock-lite@icedman.github.com
@@ -66,15 +76,14 @@ test-shell2: check-devkit install
 		dbus-run-session -- gnome-shell --devkit --wayland
 	rm -f $(DISABLE_EXT_FLAG)
 
-g44: build
+# GNOME 42-44 copy in ./build only; `g44` also installs it
+build-g44: build
 	rm -rf ./build
 	mkdir -p ./build
 	mkdir -p ./build/apps
 	mkdir -p ./build/effects
 	mkdir -p ./build/preferences
 	python3 ./tools/transpile.py
-	rm -rf ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/
-	mkdir -p ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/
 	cp -R ./schemas ./build
 	cp -R ./themes ./build
 	cp -R ./ui ./build
@@ -89,9 +98,13 @@ g44: build
 	cp ./apps/recents.js ./build/apps
 	cp ./apps/trash-render.js ./build/apps
 	cp ./apps/file-drops.js ./build/apps
-	cp -r ./build/* ~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com/
 
-publish-g44: g44
+g44: build-g44 check-install-dir
+	rm -rf "$(EXT_DIR)/"
+	mkdir -p "$(EXT_DIR)/"
+	cp -r ./build/* "$(EXT_DIR)/"
+
+publish-g44: build-g44
 	echo "publishing..."
 	cd build ; \
 	zip -qr ../dash2dock-lite@icedman.github.com.zip .

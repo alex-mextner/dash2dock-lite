@@ -177,6 +177,8 @@ To build and install Dash2Dock Animated for older versions (prior to GNOME 45), 
 make g44
 ```
 
+`make build-g44` builds the same copy into `./build` without installing it. The install targets (`make`, `make install`, `make g44`, `make install-zip`) refuse to run when `~/.local/share/gnome-shell/extensions/dash2dock-lite@icedman.github.com` is a symlink, since installing would empty the checkout it points to; remove the link first to install a copy.
+
 ## Bug Reporting
 
 When reporting bugs, please include the following details:
