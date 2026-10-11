@@ -141,6 +141,8 @@ export class FileDrops {
     this._hoverItem = null;
     this._drag = 0; // id of the current or last drag, echoed by the helper
     this._dragTargets = new Map(); // drag id -> target it ended on
+    // drag ids whose drop the helper took and is still reading
+    this._acceptedDrags = new Set();
     this._dropDelivered = false;
     this._layer = null;
     this._ready = false; // the helper reads commands
@@ -269,6 +271,8 @@ export class FileDrops {
     this._windows.forEach((w) => w.disconnectObject(this));
     this._windows = [];
     this._targets = [];
+    // a helper that is gone reports none of the drops it was reading
+    this._acceptedDrags.clear();
   }
 
   _onHelperExit() {
@@ -311,6 +315,7 @@ export class FileDrops {
       try {
         const msg = JSON.parse(line);
         if (msg.ready) this._onHelperReady();
+        if (msg.accepted !== undefined) this._acceptedDrags.add(msg.accepted);
         if (msg.drop) this._onDrop(msg.drop.uris ?? [], msg.drop.drag);
         if (msg.leave !== undefined) this._onHelperLeave(msg.leave);
       } catch (e) {
@@ -474,9 +479,12 @@ export class FileDrops {
     if (!this._dropDelivered && this._target) {
       this._dragTargets.set(this._drag, this._target);
     }
-    // a drag whose drop never came (cancelled, refused) must not pile up
+    // a drag whose drop never came (cancelled, refused) must not pile up;
+    // one the helper accepted is kept until its drop line, however late
     for (const id of this._dragTargets.keys()) {
-      if (id < this._drag - 4) this._dragTargets.delete(id);
+      if (id < this._drag - 4 && !this._acceptedDrags.has(id)) {
+        this._dragTargets.delete(id);
+      }
     }
     this._send('hide');
     if (this._activeDock) this._leaveDock(this._activeDock);
@@ -551,6 +559,7 @@ export class FileDrops {
   //---------------------
 
   _onDrop(uris, drag) {
+    this._acceptedDrags.delete(drag);
     // The helper's drop line and Meta.Dnd's dnd-leave travel unrelated
     // channels in no fixed order: a drop reported while its drag is still
     // live lands on what the pointer is over now; a later one on what that

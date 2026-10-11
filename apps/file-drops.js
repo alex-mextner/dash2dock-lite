@@ -17,9 +17,12 @@
 //                         is accepted
 //   stdout  {"ready":true}  once commands are read; the Shell sends no "show"
 //           before it
+//           {"accepted":<drag>}  a drop of that drag was taken; its "drop"
+//           line follows once the data is read, so the Shell keeps where
+//           the drag ended however many drags begin meanwhile
 //           {"drop":{"uris":[...],"drag":<drag>}}  the drag id is the one
 //           shown when the drop entered, so the Shell can route a drop read
-//           after the next drag began
+//           after the next drag began; uris is empty when reading failed
 //           {"leave":<drag>}  the drag left a drop window without dropping
 //           (moved off the dock, or ended or was cancelled over it)
 // EOF on stdin ends the process, so it never outlives the extension.
@@ -158,7 +161,8 @@ async function deliver(drop, drag) {
     printerr(`d2da file-drops: reading the drop failed: ${e.message}`);
   }
   drop.finish(uris.length ? ACTION : 0);
-  if (uris.length) send({drop: {uris, drag}});
+  // also when empty: it releases the drop the Shell holds since "accepted"
+  send({drop: {uris, drag}});
   pendingReads--;
   if (hideId === -1) hideNow();
 }
@@ -198,7 +202,9 @@ function createWindow() {
   target.connect('drop', (_t, drop) => {
     currentDrop = null;
     if (!overTarget) return false;
-    deliver(drop, dragOf.get(drop) ?? currentDrag);
+    const drag = dragOf.get(drop) ?? currentDrag;
+    send({accepted: drag});
+    deliver(drop, drag);
     return true;
   });
   area.add_controller(target);
