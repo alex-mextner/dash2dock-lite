@@ -246,15 +246,24 @@ export const Services = class {
       });
     });
 
+    // one unusable entry must not keep the whole dock from loading
+    stacks = stacks.filter((stack) => {
+      try {
+        stack.app = this.setupFolderIcon(
+          stack.key,
+          stack.title,
+          stack.icon,
+          stack.path
+        );
+        return true;
+      } catch (e) {
+        console.warn(`d2da: folder stack ${stack.path} skipped`, e);
+        return false;
+      }
+    });
     stacks.forEach((stack) => {
       stack.files = null;
       stack.total = 0;
-      stack.app = this.setupFolderIcon(
-        stack.key,
-        stack.title,
-        stack.icon,
-        stack.path
-      );
       // Unwatched stacks still list their files on open via prepare().
       stack.monitor = watchDir(
         Gio.File.new_for_path(stack.path),
@@ -397,8 +406,8 @@ export const Services = class {
 
   // the stack's dock item; activating it opens the folder itself
   setupFolderIcon(name, title, icon, path) {
-    let quoted_path = GLib.shell_quote(Gio.File.new_for_path(path).get_path());
-    let content = `[Desktop Entry]\nVersion=1.0\nTerminal=false\nType=Application\nName=${this._escapeDesktopValue(title)}\nExec=nautilus ${quoted_path}\nIcon=${this._escapeDesktopValue(icon)}\nStartupWMClass=${this._toSafeFileName(name)}-dash2dock-lite\n`;
+    let exec = `nautilus ${this._execArg(Gio.File.new_for_path(path).get_path())}`;
+    let content = `[Desktop Entry]\nVersion=1.0\nTerminal=false\nType=Application\nName=${this._escapeDesktopValue(title)}\nExec=${exec}\nIcon=${this._escapeDesktopValue(icon)}\nStartupWMClass=${this._toSafeFileName(name)}-dash2dock-lite\n`;
     return this._createAppInfoFromData(content);
   }
 
@@ -416,7 +425,7 @@ export const Services = class {
     let appname = this._getMountAppName(mount);
     let location = mount.get_default_location();
     let fullpath = location?.get_path() || location?.get_uri() || '';
-    let quoted_path = GLib.shell_quote(fullpath);
+    let quoted_path = this._execArg(fullpath);
     let icon = 'drive-harddisk-solidstate';
     if (mount.get_icon() && mount.get_icon().names) {
       icon =
@@ -923,6 +932,15 @@ export const Services = class {
       .replace(/\n/g, '\\n')
       .replace(/\r/g, '\\r')
       .replace(/\t/g, '\\t');
+  }
+
+  // A path as one Exec= argument: shell-quoted for GDesktopAppInfo's argv
+  // split, `%` doubled so it is not a field code, then escaped for the key
+  // file. A raw newline or backslash makes load_from_data() throw.
+  _execArg(path) {
+    return this._escapeDesktopValue(
+      GLib.shell_quote(path).replace(/%/g, '%%')
+    );
   }
 
   _getMountName(mount) {
