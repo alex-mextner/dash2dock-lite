@@ -1110,11 +1110,17 @@ export default class Dash2DockLiteExt extends Extension {
     this.docks?.forEach((dock) => dock._onWindowsChanged());
   }
 
-  // runs before Mutter starts the minimize/unminimize effect: the docks lay
-  // out the window's tile, then the window is aimed at it
+  // Runs before Mutter starts the minimize/unminimize effect: the docks lay
+  // out the window's tile, then the window is aimed at it. A new tile moves
+  // the tiles before it, and windows minimized together (click-minimizes)
+  // only start their effects after the last one: re-aim every tiled window.
   _onMinimizedChanged(window) {
-    this.docks?.forEach((dock) => dock._onMinimizedChanged(window));
-    this.windowFeedback?.aimWindow(window);
+    let windows = new Set([window]);
+    this.docks?.forEach((dock) => {
+      dock._onMinimizedChanged(window);
+      dock._minimizedTiles?.forEach((tile, w) => windows.add(w));
+    });
+    windows.forEach((w) => this.windowFeedback?.aimWindow(w));
   }
 
   _onMonitorsChanged() {
