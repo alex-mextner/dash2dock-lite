@@ -264,6 +264,12 @@ class MinimizedTile {
     this.item._onClick = () => {
       Main.activateWindow(metaWindow);
     };
+    // Shell exit disposes the dock from C, without destroy() here: a hold
+    // ending or the window changing afterwards would relayout a disposed dock
+    this.item.connect('destroy', () => {
+      this._release();
+      this.window.disconnectObject(this);
+    });
 
     // drawn over the item's renderer (see sync), like the clock widget
     this.actor = new St.Widget({ name: 'd2daMinimizedTile' });
