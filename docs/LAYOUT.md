@@ -32,7 +32,10 @@ or on the natural size of those actors.
 4. Every icon is set to `itemSize` × `itemSize`. In a horizontal dock,
    separators are capped at `itemSize`.
 5. The dash's cross-axis size is pinned to `itemSize`; the main axis is left
-   natural (`-1`).
+   natural (`-1`). The platter (`DockBackground`) is centred on the dash's
+   cross axis, so separators sit centred on it through `CENTER` alignment and
+   equal cross-axis margins (`_inspectIcon()`). The animator moves them only
+   along the dock and sets their length to `0.75 × iconSize`.
 6. `_snapToContainerEdge(this, this.dash)` uses that pinned size, so the snap
    gives the same result in every frame.
 

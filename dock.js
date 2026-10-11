@@ -808,7 +808,12 @@ export let Dock = GObject.registerClass(
         this._separators.push(c);
         this._dashItems.push(c);
         c.visible = true;
-        c.style = 'margin-left: 8px; margin-right: 8px;';
+        // Centred across the dock by alignment, so the cross-axis margins must
+        // be equal: this also overrides the theme's `#dash .dash-separator
+        // { margin-bottom }`, meant for the overview dash.
+        c.x_align = Clutter.ActorAlign.CENTER;
+        c.y_align = Clutter.ActorAlign.CENTER;
+        c.style = this.isVertical() ? 'margin: 8px 0;' : 'margin: 0 8px;';
         return false;
       }
 
@@ -1284,8 +1289,10 @@ export let Dock = GObject.registerClass(
           total: () => stack.total,
         });
         item._folderStack = stack;
-        setupStackItem(this, item, stack);
+        // registered first: anything setup triggers that relayouts this dock
+        // must find the item instead of creating it again
         this._folderIcons.set(stack.key, item);
+        setupStackItem(this, item, stack);
         this._icons = null;
         this._needsLayout = true;
       });
@@ -1811,6 +1818,7 @@ export let Dock = GObject.registerClass(
       this._updateFocusedIcon();
       // icons are at rest now: the minimize target can be measured
       this.extension.windowFeedback?.queueIconGeometry();
+      this._stackPanel?.aimAtIcon();
 
       if (this.extension._hiTimer) {
         this.extension._hiTimer.cancel(this._animationSeq);

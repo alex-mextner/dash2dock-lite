@@ -345,7 +345,9 @@ export let Animator = class {
     const isWithinPrimary = (primaryMouseVal >= expandedStart && primaryMouseVal <= expandedEnd);
 
     isWithin = isWithinPrimary && isWithinSecondary;
-    if (m.inFullscreen) {
+    // an open stack panel's pointer aims at the icon at rest; magnifying
+    // under the panel would also push icons into it
+    if (m.inFullscreen || dock._stackPanel) {
         isWithin = false;
     }
     animated = isWithin;
@@ -908,8 +910,12 @@ export let Animator = class {
           dock.extension.notification_badge_style_options[
             dock.extension.notification_badge_style
           ] || 'default';
-        // 'default' is the "None" style: no actor for an invisible badge
-        if (style == 'default') noticesCount = 0;
+        // 'default' is the "None" style: the user asked for nothing drawn on
+        // the icons, so neither the count nor the LauncherEntry progress pill
+        if (style == 'default') {
+          noticesCount = 0;
+          progress = -1;
+        }
         if (badge && (noticesCount > 0 || progress >= 0)) {
           badge.update(icon, {
             noticesCount,
@@ -977,26 +983,22 @@ export let Animator = class {
       let prev = actor._prev; // get_previous_sibling() || actor._prev;
       let next = actor._next; // get_next_sibling();
       if (prev && next && prev._icon && next._icon) {
-        actor.translationX =
-          (prev._icon.translationX + next._icon.translationX) / 2;
-        actor.translationY =
-          (prev._icon.translationY + next._icon.translationY) / 2;
+        // follow the neighbours along the dock only: across it they rise on
+        // hover, the line stays centred on the platter (its CENTER alignment
+        // in the dash slot, see Dock._inspectIcon)
+        let tx = (prev._icon.translationX + next._icon.translationX) / 2;
+        let ty = (prev._icon.translationY + next._icon.translationY) / 2;
+        actor.translationX = vertical ? 0 : tx;
+        actor.translationY = vertical ? ty : 0;
         let thickness = dock.extension.separator_thickness || 0;
         if (vertical) {
-          actor.width = iconSize * 0.5 * scaleFactor;
+          actor.width = iconSize * 0.75 * scaleFactor;
           actor.height = thickness + 0.5;
         } else {
           actor.width = thickness + 0.5;
           actor.height = iconSize * 0.75 * scaleFactor;
         }
         actor.visible = thickness > 0;
-      }
-
-      let any = next ?? prev;
-      if (!vertical && any) {
-        actor.translationY = any.height / 2 - actor.height / 2;
-      } else if (vertical && any) {
-        // actor.translationX = any.width / 2 - actor.width / 2;
       }
     });
 

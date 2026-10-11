@@ -17,6 +17,10 @@
 //   allocated 0x0, so the clone's scale is size / 0. WindowGroupMirror clones
 //   the group's children instead, and only those near the dock, so windows
 //   elsewhere on screen do not invalidate the blur.
+// * The folder stack panel (stackPanel.js) is the same platter with a popover
+//   pointer: a triangle merged into the SDF (setNotch), so its outline, rim
+//   and shadow are one shape; without the glass material it runs with no
+//   backdrop, as a flat translucent platter.
 
 import Clutter from 'gi://Clutter';
 import Cogl from 'gi://Cogl';
@@ -41,10 +45,42 @@ uniform float rim;         // specular rim strength
 uniform vec4  tint;        // rgb + amount
 uniform float shadow;      // drop shadow alpha
 uniform float scale;       // device pixels per logical pixel
+uniform vec4  notch;       // pointer tip (px) and unit direction tip -> glass
+uniform vec2  notchSize;   // pointer half base width and depth, px; 0 = none
 
 float sdRoundBox(vec2 p, vec2 b, float r) {
     vec2 q = abs(p) - b + vec2(r);
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+// Isosceles triangle, apex at the origin, base (half width q.x) at y = q.y.
+float sdTriangle(vec2 p, vec2 q) {
+    p.x = abs(p.x);
+    vec2 a = p - q * clamp(dot(p, q) / dot(q, q), 0.0, 1.0);
+    vec2 b = p - q * vec2(clamp(p.x / q.x, 0.0, 1.0), 1.0);
+    float s = -sign(q.y);
+    vec2 d = min(vec2(dot(a, a), s * (p.x * q.y - p.y * q.x)),
+                 vec2(dot(b, b), s * (p.y - q.y)));
+    return -sqrt(d.x) * sign(d.y);
+}
+
+// The glass outline, p relative to the rect centre: the rounded rect, plus
+// the popover pointer when notchSize is set. The pointer runs on into the
+// rect so the two merge, with a smooth union filleting the joints and a
+// rounded apex that still ends on the tip.
+float shape(vec2 p, vec2 hb, float r) {
+    float d = sdRoundBox(p, hb, r);
+    if (notchSize.y <= 0.0) return d;
+    vec2 t = p + rect.xy + hb - notch.xy;
+    vec2 u = notch.zw;
+    vec2 l = vec2(dot(t, vec2(-u.y, u.x)), dot(t, u));
+    vec2 q = notchSize * 2.0;
+    float tipR = 1.5 * scale;
+    float lift = tipR * length(notchSize) / notchSize.x;
+    float dt = sdTriangle(l - vec2(0.0, lift), q) - tipR;
+    float k = notchSize.y * 0.6;
+    float h = clamp(0.5 + 0.5 * (dt - d) / k, 0.0, 1.0);
+    return mix(dt, d, h) - k * h * (1.0 - h);
 }
 `;
 
@@ -53,10 +89,14 @@ vec2 px = cogl_tex_coord_in[0].st * size;
 vec2 hb = rect.zw * 0.5;
 vec2 p = px - (rect.xy + hb);
 float r = min(radius, min(hb.x, hb.y));
-float d = sdRoundBox(p, hb, r);                        // < 0 inside the glass
+float d = shape(p, hb, r);                             // < 0 inside the glass
 float cover = clamp(0.5 - d, 0.0, 1.0);                // 1px anti-aliased edge
 
-// Outward normal from the SDF gradient.
+// Outward normal from the SDF gradient. The lens follows the rounded rect
+// alone: a pointer has no room for a bezel, and its sharp sides would split
+// the refraction along seams. Inside the pointer the rect's edge refraction
+// just carries on.
+float dl = sdRoundBox(p, hb, r);
 vec2 e = vec2(0.5, 0.0);
 vec2 n = vec2(sdRoundBox(p + e.xy, hb, r) - sdRoundBox(p - e.xy, hb, r),
               sdRoundBox(p + e.yx, hb, r) - sdRoundBox(p - e.yx, hb, r));
@@ -64,7 +104,7 @@ n = n / max(length(n), 1e-4);
 
 // Convex bezel: flat in the middle, bending harder towards the rim. Sampling
 // inward compresses the backdrop into the edge, as a thick lens does.
-float t = clamp(1.0 + d / max(bezel, 1.0), 0.0, 1.0);
+float t = clamp(1.0 + dl / max(bezel, 1.0), 0.0, 1.0);
 float lens = t * t * t;
 vec2 uv = (px - n * lens * refraction) / size;
 vec2 ca = n * lens * chroma / size;
@@ -88,7 +128,7 @@ float spec = rim * (line * (0.28 + 0.50 * top + 0.22 * bottom) + 0.10 * glow);
 col = col * (1.0 - clamp(spec, 0.0, 1.0)) + vec4(clamp(spec, 0.0, 1.0));
 
 // Soft drop shadow outside the glass, offset downward.
-float ds = sdRoundBox(p - vec2(0.0, 3.0 * scale), hb, r);
+float ds = shape(p - vec2(0.0, 3.0 * scale), hb, r);
 float sh = shadow * (1.0 - smoothstep(-4.0 * scale, 16.0 * scale, ds)) * (1.0 - cover);
 
 cogl_color_out = (col * cover + vec4(0.0, 0.0, 0.0, sh)) * cogl_color_in.a;
@@ -105,6 +145,8 @@ const UNIFORMS = {
   tint: 4,
   shadow: 1,
   scale: 1,
+  notch: 4,
+  notchSize: 2,
 };
 
 export const GlassEffect = GObject.registerClass(
@@ -343,6 +385,8 @@ export const GlassPlatter = GObject.registerClass(
         r: -1, g: -1, b: -1, a: -1, scale: -1,
       };
       this._g = { x: NaN, y: NaN, w: NaN, h: NaN, ox: NaN, oy: NaN, rw: NaN, rh: NaN };
+      // popover pointer (setNotch); depth 0 = none, as on the dock
+      this._n = { x: 0, y: 0, dx: 0, dy: 1, half: 0, depth: 0 };
       this._materialChanged = true;
 
       // The overview hides the window group and draws its own background;
@@ -360,9 +404,16 @@ export const GlassPlatter = GObject.registerClass(
       this.connect('destroy', () => global.window_group.disconnectObject(this));
     }
 
-    // backdrop: 'windows' (wallpaper + windows near the dock, live) or
-    // 'wallpaper' (the monitor's wallpaper only; cheapest)
+    // backdrop: 'windows' (wallpaper + windows near the dock, live),
+    // 'wallpaper' (the monitor's wallpaper only; cheapest) or 'none' (no
+    // backdrop: a translucent tinted platter, as in the overview)
     setBackdrop(backdrop, monitorIndex) {
+      if (backdrop === 'none') {
+        this._source?.destroy();
+        this._source = null;
+        this._backdrop = backdrop;
+        return;
+      }
       if (
         this._source &&
         backdrop === this._backdrop &&
@@ -427,6 +478,30 @@ export const GlassPlatter = GObject.registerClass(
       this._materialChanged = true;
     }
 
+    // A popover pointer: its tip (x, y) relative to the glass rect's origin,
+    // the unit direction (dx, dy) from the tip into the glass, its half base
+    // width and its depth, in px. Applied by the next setGeometry().
+    setNotch(x, y, dx, dy, half, depth) {
+      const n = this._n;
+      if (
+        n.x === x &&
+        n.y === y &&
+        n.dx === dx &&
+        n.dy === dy &&
+        n.half === half &&
+        n.depth === depth
+      ) {
+        return;
+      }
+      n.x = x;
+      n.y = y;
+      n.dx = dx;
+      n.dy = dy;
+      n.half = half;
+      n.depth = depth;
+      this._materialChanged = true;
+    }
+
     // Geometry: the glass rect (x, y, w, h) in the parent's coordinates, the
     // parent's stage position, and the parent's size, which bounds the
     // windows worth mirroring. Called every frame; does nothing unless a
@@ -455,8 +530,6 @@ export const GlassPlatter = GObject.registerClass(
       gm.oy = oy;
       gm.rw = rw;
       gm.rh = rh;
-      if (!this._source) return;
-
       const m = this._m;
       const scale = m.scale;
       const pad = Math.ceil(24 * scale); // drop shadow room
@@ -464,23 +537,26 @@ export const GlassPlatter = GObject.registerClass(
 
       this.set_position(x - pad, y - pad);
       this.set_size(w + 2 * pad, h + 2 * pad);
-      this._wrapper.set_position(-margin, -margin);
-      this._wrapper.set_size(w + 2 * (pad + margin), h + 2 * (pad + margin));
 
-      // place the source so the stage point under the platter's origin lands
-      // at the platter's origin
-      this._source.set_position(
-        this._sourceOriginX() - (ox + x - pad) + margin,
-        this._sourceOriginY() - (oy + y - pad) + margin
-      );
-      if (this._backdrop !== 'wallpaper') {
-        this._source.setRegion(ox, oy, ox + rw, oy + rh);
+      if (this._source) {
+        this._wrapper.set_position(-margin, -margin);
+        this._wrapper.set_size(w + 2 * (pad + margin), h + 2 * (pad + margin));
+        // place the source so the stage point under the platter's origin
+        // lands at the platter's origin
+        this._source.set_position(
+          this._sourceOriginX() - (ox + x - pad) + margin,
+          this._sourceOriginY() - (oy + y - pad) + margin
+        );
+        if (this._backdrop !== 'wallpaper') {
+          this._source.setRegion(ox, oy, ox + rw, oy + rh);
+        }
       }
 
       // uniforms only depend on size and material, not on position
       if (!sizeChanged) return;
       this._materialChanged = false;
       const r = Math.min(m.radius, w / 2, h / 2);
+      const n = this._n;
       const bezel = Math.max(4 * scale, Math.min(r * 1.1, Math.min(w, h) * 0.4));
       this._glass.setUniforms({
         size: [w + 2 * pad, h + 2 * pad],
@@ -493,6 +569,8 @@ export const GlassPlatter = GObject.registerClass(
         tint: [m.r, m.g, m.b, m.a],
         shadow: 0.22,
         scale,
+        notch: [pad + n.x, pad + n.y, n.dx, n.dy],
+        notchSize: [n.half, n.depth],
       });
     }
   }

@@ -9,19 +9,32 @@
 // windows; this process only accepts the drop and reports the URIs.
 //
 // Protocol, one line per message:
-//   stdin   "show <n>"    map n drop windows (one per dock)
+//   stdin   "show <n> <drag>"  map n drop windows (one per dock) for drag
+//                         id <drag>
 //           "hide"        unmap them once any drop in flight is delivered
 //           "target 0|1"  whether the pointer is over a dock item that takes
 //                         files; decides the drag cursor and whether a drop
 //                         is accepted
-//   stdout  {"drop":{"uris":[...]}}
+//   stdout  {"drop":{"uris":[...],"drag":<drag>}}  the drag id is the one
+//           shown when the drop entered, so the Shell can route a drop read
+//           after the next drag began
 // EOF on stdin ends the process, so it never outlives the extension.
 
 import Gdk from 'gi://Gdk?version=4.0';
 import Gio from 'gi://Gio';
-import GioUnix from 'gi://GioUnix';
 import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk?version=4.0';
+
+// GioUnix split out of Gio in GLib 2.80 (GNOME 46); the GNOME 44/45 builds
+// still find the unix streams on Gio itself. Looked up synchronously: a
+// top-level await would leave loop.run() inside a promise job, where the
+// awaits in deliver() never resume and every drop is lost.
+let GioUnix;
+try {
+  GioUnix = imports.gi.GioUnix;
+} catch {
+  GioUnix = {InputStream: Gio.UnixInputStream, OutputStream: Gio.UnixOutputStream};
+}
 
 const URI_LIST = 'text/uri-list';
 // the extension runs the trash / open / move itself: COPY keeps the source
@@ -36,12 +49,15 @@ Gtk.init();
 const css = new Gtk.CssProvider();
 // Adwaita outlines a widget under a drag (:drop(active)); the dock's own
 // magnification and label are the feedback, so nothing is drawn here
-css.load_from_string(`
+const CSS = `
   window.d2d-file-drops, window.d2d-file-drops * {
     background: none; box-shadow: none; outline: none; border: none;
   }
   window.d2d-file-drops *:drop(active) { box-shadow: none; outline: none; }
-`);
+`;
+// load_from_string is GTK 4.12+; GNOME 44 ships GTK 4.10
+if (css.load_from_string) css.load_from_string(CSS);
+else css.load_from_data(CSS, -1);
 Gtk.StyleContext.add_provider_for_display(
   Gdk.Display.get_default(),
   css,
@@ -58,6 +74,8 @@ function send(obj) {
 
 let overTarget = false;
 let currentDrop = null;
+let currentDrag = 0;
+const dragOf = new WeakMap(); // Gdk.Drop -> drag id when it entered
 let pendingReads = 0;
 let hideId = 0;
 const windows = [];
@@ -124,7 +142,7 @@ function readFileList(drop) {
   });
 }
 
-async function deliver(drop) {
+async function deliver(drop, drag) {
   pendingReads++;
   let uris = [];
   try {
@@ -136,7 +154,7 @@ async function deliver(drop) {
     printerr(`d2da file-drops: reading the drop failed: ${e.message}`);
   }
   drop.finish(uris.length ? ACTION : 0);
-  if (uris.length) send({drop: {uris}});
+  if (uris.length) send({drop: {uris, drag}});
   pendingReads--;
   if (hideId === -1) hideNow();
 }
@@ -165,6 +183,7 @@ function createWindow() {
   });
   target.connect('drag-enter', (_t, drop) => {
     currentDrop = drop;
+    dragOf.set(drop, currentDrag);
     return status(drop);
   });
   target.connect('drag-motion', (_t, drop) => status(drop));
@@ -174,7 +193,7 @@ function createWindow() {
   target.connect('drop', (_t, drop) => {
     currentDrop = null;
     if (!overTarget) return false;
-    deliver(drop);
+    deliver(drop, dragOf.get(drop) ?? currentDrag);
     return true;
   });
   area.add_controller(target);
@@ -227,8 +246,9 @@ function readCommand() {
       loop.quit();
       return;
     }
-    const [cmd, arg] = line.trim().split(' ');
+    const [cmd, arg, arg2] = line.trim().split(' ');
     if (cmd === 'show') {
+      currentDrag = parseInt(arg2) || 0;
       show(Math.max(1, parseInt(arg) || 1));
     } else if (cmd === 'hide') {
       hide();

@@ -542,7 +542,7 @@
         <child>
           <object class="AdwActionRow">
             <property name="title" translatable="yes">App Badges and Progress (Launcher API)</property>
-            <property name="subtitle" translatable="yes">Show unread counts, progress bars and urgency that apps such as Telegram, Thunderbird, VS Code or Chrome publish through the Unity LauncherEntry D-Bus API.</property>
+            <property name="subtitle" translatable="yes">Show unread counts, progress bars and urgency that apps such as Telegram, Thunderbird, VS Code or Chrome publish through the Unity LauncherEntry D-Bus API. Counts and progress bars use the Notification Badge Style; None hides both.</property>
             <property name="activatable-widget">launcher-api</property>
             <child>
               <object class="GtkSwitch" id="launcher-api">

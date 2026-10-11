@@ -2,8 +2,12 @@
 
 // Folder stack options (view / sort / display) and the macOS-style Grid and
 // List panels a stack opens in when it is not shown as the classic fan.
-// The panel is plain St widgets styled by CSS, so it renders on the GPU; its
-// thumbnails come from the freedesktop cache through St.TextureCache (async).
+// The panel is a popover like the Dock's: it stands clear of the dock on the
+// screen side, with a pointer at its dock edge aimed at the stack's icon, and
+// grows from / shrinks into that pointer. Its background is the dock's Liquid
+// Glass (one GLSL pass, the pointer part of the same SDF) or, with the glass
+// material off, the same shape as a flat translucent platter. Thumbnails come
+// from the freedesktop cache through St.TextureCache (async).
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
@@ -15,6 +19,7 @@ import GdkPixbuf from 'gi://GdkPixbuf';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
+import { GlassPlatter } from './effects/glass.js';
 import { trySpawnCommandLine } from './utils.js';
 
 // index order = the int value of the downloads-stack-* settings; index 0 is the
@@ -164,7 +169,10 @@ export function setupStackItem(dock, item, stack) {
   let dashIcon = item.child;
   let applyDisplay = () => {
     dashIcon?.setStackGicon?.(stackGicon(stack.files?.[0]));
-    extension.animate?.({ refresh: true });
+    // The renderer copies the icon's gicon on its next frame, so starting
+    // the animation is enough. A refresh would relayout synchronously, and
+    // as this also runs while a relayout creates the item, that recursed.
+    extension.animate?.();
   };
   // one listener per dock showing this stack (multi-monitor)
   stack.fileListeners = stack.fileListeners ?? new Set();
@@ -183,8 +191,30 @@ const LIST_ROWS_VISIBLE = 12;
 const LIST_ROW_STYLE = 'border-radius: 8px; padding: 4px 8px;';
 const HOVER = 'background-color: rgba(255,255,255,0.16);';
 
+// popover geometry, logical px
+const PANEL_RADIUS = 16;
+const NOTCH_HALF = 11; // half the pointer's base
+const NOTCH_DEPTH = 10;
+const DOCK_GAP = 6; // between the dock's edge and the pointer's tip
+const SCREEN_MARGIN = 8;
+const MIN_SCROLL = 96; // the panel never shrinks its files below this
+// the glass is darker than the dock's for the white labels on it
+const GLASS_TINT = [0.1, 0.1, 0.12, 0.5];
+const GLASS_MIN_BLUR = 24;
+// glass-material off: the former CSS panel (rgba(40,40,46,0.72), 18px corners)
+const FLAT_TINT = [40 / 255, 40 / 255, 46 / 255, 0.72];
+const FLAT_RADIUS = 18;
+const FLAT_RIM = 0.5;
+const OPEN_MS = 220;
+const CLOSE_MS = 160;
+const START_SCALE = 0.2;
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(v, hi));
+}
+
 // A full-monitor transparent backdrop (a click outside closes, as in macOS)
-// with the panel anchored over the stack's dock icon.
+// holding the popover beside the dock.
 export const StackPanel = GObject.registerClass(
   {},
   class StackPanel extends St.Widget {
@@ -214,18 +244,20 @@ export const StackPanel = GObject.registerClass(
       });
 
       let scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+      this._scale = scale;
+      // the background, the content above it; both scale from the pointer
+      this._popover = new St.Widget({ reactive: true });
+      // clicks inside the panel do not reach the backdrop
+      this._popover.connect('button-press-event', () => Clutter.EVENT_STOP);
+      this.add_child(this._popover);
+      this._glass = new GlassPlatter();
+      this._popover.add_child(this._glass);
       this._panel = new St.BoxLayout({
         name: 'd2daStackPanel',
         orientation: Clutter.Orientation.VERTICAL,
-        reactive: true,
-        style:
-          'background-color: rgba(40,40,46,0.72); border-radius: 18px;' +
-          'border: 1px solid rgba(255,255,255,0.22); padding: 10px;' +
-          'box-shadow: 0 8px 24px rgba(0,0,0,0.35);',
+        style: 'padding: 10px;',
       });
-      // clicks inside the panel do not reach the backdrop
-      this._panel.connect('button-press-event', () => Clutter.EVENT_STOP);
-      this.add_child(this._panel);
+      this._popover.add_child(this._panel);
 
       this._panel.add_child(
         new St.Label({
@@ -240,6 +272,7 @@ export const StackPanel = GObject.registerClass(
         vscrollbar_policy: St.PolicyType.AUTOMATIC,
         overlay_scrollbars: true,
       });
+      this._scroll = scroll;
       let content;
       if (view === 'list') {
         content = new St.BoxLayout({
@@ -296,33 +329,147 @@ export const StackPanel = GObject.registerClass(
       // lands on the backdrop and closes the panel
       this._grab = Main.pushModal(this);
       this.grab_key_focus();
+
+      this._popover.set_scale(START_SCALE, START_SCALE);
+      this._popover.opacity = 0;
+      this._popover.ease({
+        scale_x: 1,
+        scale_y: 1,
+        opacity: 255,
+        duration: OPEN_MS,
+        mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
+      });
     }
 
-    // above the icon for a bottom dock, beside it for side docks, below for top
+    // The panel stands DOCK_GAP + NOTCH_DEPTH off the dock's edge, on the
+    // screen side (above a bottom dock, beside a side dock), centred on the
+    // stack's icon but kept on the work area; the pointer follows the icon.
     _place() {
-      let [, , pw, ph] = this._panel.get_preferred_size();
-      let [tx, ty] = this._target.get_transformed_position();
-      let [tw, th] = this._target.get_transformed_size();
-      let m = this.dock._monitor;
-      let gap = 8;
-      let x = tx + tw / 2 - pw / 2;
-      let y = ty - ph - gap;
-      switch (this.dock._position) {
+      let dock = this.dock;
+      let m = dock._monitor;
+      let wa = Main.layoutManager.getWorkAreaForMonitor(dock._monitorIndex);
+      let s = this._scale;
+      let depth = NOTCH_DEPTH * s;
+      let gap = DOCK_GAP * s;
+      let margin = SCREEN_MARGIN * s;
+      let glassOn = dock.extension.glass_material;
+      this._radius = (glassOn ? PANEL_RADIUS : FLAT_RADIUS) * s;
+
+      // the dock's edge is its background's, so the panel never covers it
+      let [bx, by] = dock._background.get_transformed_position();
+      let [bw, bh] = dock._background.get_transformed_size();
+      let [cx, cy] = this._iconCenter();
+
+      let pos = dock._position;
+      let vertical = pos === 'left' || pos === 'right';
+      // room between the pointer's base and the far screen edge
+      let room;
+      let tip;
+      switch (pos) {
         case 'top':
-          y = ty + th + gap;
+          tip = by + bh + gap;
+          room = wa.y + wa.height - margin - (tip + depth);
           break;
         case 'left':
-          x = tx + tw + gap;
-          y = ty + th / 2 - ph / 2;
+          tip = bx + bw + gap;
+          room = wa.height - 2 * margin;
           break;
         case 'right':
-          x = tx - pw - gap;
-          y = ty + th / 2 - ph / 2;
+          tip = bx - gap;
+          room = wa.height - 2 * margin;
           break;
+        default:
+          tip = by - gap;
+          room = tip - depth - (wa.y + margin);
       }
-      x = Math.max(m.x + gap, Math.min(x, m.x + m.width - pw - gap));
-      y = Math.max(m.y + gap, Math.min(y, m.y + m.height - ph - gap));
-      this._panel.set_position(Math.round(x - m.x), Math.round(y - m.y));
+
+      // too tall for the room: give up file rows, never the dock
+      let [, pw] = this._panel.get_preferred_width(-1);
+      let [, ph] = this._panel.get_preferred_height(pw);
+      if (ph > room) {
+        let [, sh] = this._scroll.get_preferred_height(-1);
+        this._scroll.height = Math.max(MIN_SCROLL * s, sh - (ph - room));
+        [, ph] = this._panel.get_preferred_height(pw);
+      }
+
+      let x, y;
+      if (vertical) {
+        x = pos === 'left' ? tip + depth : tip - depth - pw;
+        y = clamp(cy - ph / 2, wa.y + margin, wa.y + wa.height - margin - ph);
+      } else {
+        x = clamp(cx - pw / 2, m.x + margin, m.x + m.width - margin - pw);
+        y = pos === 'top' ? tip + depth : tip - depth - ph;
+      }
+      this._rect = {
+        x: Math.round(x),
+        y: Math.round(y),
+        w: pw,
+        h: ph,
+        tip: Math.round(tip),
+        vertical,
+        // unit direction from the pointer's tip into the panel
+        dx: pos === 'left' ? 1 : pos === 'right' ? -1 : 0,
+        dy: pos === 'top' ? 1 : pos === 'bottom' ? -1 : 0,
+      };
+      let r = this._rect;
+      this._popover.set_position(r.x - m.x, r.y - m.y);
+      this._popover.set_size(pw, ph);
+      this._panel.set_size(pw, ph);
+
+      let ext = dock.extension;
+      let glass = this._glass;
+      if (glassOn) {
+        // The windows behind, whatever the dock's glass-backdrop: the panel
+        // floats over them (the dock's usual wallpaper-only backdrop would
+        // show the wallpaper through a window). It is a still view, blurred
+        // once while they do not change.
+        glass.setBackdrop('windows', dock._monitorIndex);
+        glass.setMaterial(
+          this._radius,
+          Math.max(ext.glass_blur, GLASS_MIN_BLUR) * s,
+          ext.glass_refraction * s,
+          ext.glass_rim,
+          ...GLASS_TINT,
+          s
+        );
+      } else {
+        glass.setBackdrop('none', dock._monitorIndex);
+        glass.setMaterial(this._radius, 0, 0, FLAT_RIM, ...FLAT_TINT, s);
+      }
+      this._aim(cx, cy);
+    }
+
+    // Where the stack's icon is drawn: the animator's renderer, which the
+    // dock packs apart from the item's own (layout) box.
+    _iconCenter() {
+      let icon = this._target._renderer ?? this._target;
+      let [x, y] = icon.get_transformed_position();
+      let [w, h] = icon.get_transformed_size();
+      return [x + w / 2, y + h / 2];
+    }
+
+    // Points the pointer at (cx, cy), kept on the panel's straight edge.
+    _aim(cx, cy) {
+      let r = this._rect;
+      let half = NOTCH_HALF * this._scale;
+      let inset = this._radius + half;
+      let tipX = r.vertical ? r.tip : clamp(cx, r.x + inset, r.x + r.w - inset);
+      let tipY = r.vertical ? clamp(cy, r.y + inset, r.y + r.h - inset) : r.tip;
+      tipX = Math.round(tipX) - r.x;
+      tipY = Math.round(tipY) - r.y;
+      this._popover.set_pivot_point(tipX / r.w, tipY / r.h);
+      let depth = NOTCH_DEPTH * this._scale;
+      this._glass.setNotch(tipX, tipY, r.dx, r.dy, half, depth);
+      // the backdrop mirrors only the windows under the panel
+      this._glass.setGeometry(0, 0, r.w, r.h, r.x, r.y, r.w, r.h);
+    }
+
+    // The dock settled after the click (its magnification is off while the
+    // panel is open): aim the pointer at where the icon rests.
+    aimAtIcon() {
+      if (this._closed || !this._rect) return;
+      let [cx, cy] = this._iconCenter();
+      this._aim(cx, cy);
     }
 
     _thumb(f, size, scale) {
@@ -405,12 +552,16 @@ export const StackPanel = GObject.registerClass(
       return row;
     }
 
+    // Buttons stay clickable while the panel shrinks away after close();
+    // by then the dock reference is gone, so activation is ignored.
     _open(f) {
+      if (this._closed) return;
       this.dock._maybeBounce(this._target);
       this._spawn(openCommand(f, this._fileExplorer));
     }
 
     _spawn(cmd) {
+      if (this._closed) return;
       this.close();
       trySpawnCommandLine(cmd).catch((err) => console.log(err));
     }
@@ -428,7 +579,21 @@ export const StackPanel = GObject.registerClass(
         Main.popModal(this._grab);
         this._grab = null;
       }
-      this.destroy();
+      // shrink back into the pointer; clicks already pass through
+      this.reactive = false;
+      this._popover.reactive = false;
+      let destroyed = false;
+      this.connect('destroy', () => (destroyed = true));
+      this._popover.ease({
+        scale_x: START_SCALE,
+        scale_y: START_SCALE,
+        opacity: 0,
+        duration: CLOSE_MS,
+        mode: Clutter.AnimationMode.EASE_IN_CUBIC,
+        onStopped: () => {
+          if (!destroyed) this.destroy();
+        },
+      });
     }
   }
 );

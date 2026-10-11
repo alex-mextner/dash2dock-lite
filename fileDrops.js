@@ -126,7 +126,9 @@ export class FileDrops {
     this._activeDock = null;
     this._target = null;
     this._hoverItem = null;
-    this._dropTarget = null;
+    this._drag = 0; // id of the current or last drag, echoed by the helper
+    this._dragTargets = new Map(); // drag id -> target it ended on
+    this._dropDelivered = false;
     this._layer = null;
   }
 
@@ -184,7 +186,8 @@ export class FileDrops {
     this._activeDock = null;
     this._target = null;
     this._hoverItem = null;
-    this._dropTarget = null;
+    this._dragTargets.clear();
+    this._dropDelivered = false;
   }
 
   //---------------------
@@ -278,7 +281,7 @@ export class FileDrops {
       if (line === null) return; // helper exited; wait_async restarts it
       try {
         const msg = JSON.parse(line);
-        if (msg.drop) this._onDrop(msg.drop.uris ?? []);
+        if (msg.drop) this._onDrop(msg.drop.uris ?? [], msg.drop.drag);
       } catch (e) {
         console.error('d2da: file-drops helper message', e);
       }
@@ -319,7 +322,8 @@ export class FileDrops {
 
   _onDragBegin() {
     if (!this._proc) return;
-    this._dropTarget = null;
+    this._drag++;
+    this._dropDelivered = false;
     this._target = null;
     this._hoverItem = null;
     this._activeDock = null;
@@ -328,7 +332,7 @@ export class FileDrops {
       .map((dock) => ({ dock, rect: this._dropRect(dock), window: null }));
     if (!this._targets.length) return;
     this._send('target 0');
-    this._send(`show ${this._targets.length}`);
+    this._send(`show ${this._targets.length} ${this._drag}`);
     // above whatever chrome was added since
     Main.layoutManager.uiGroup.set_child_above_sibling(this._layer, null);
   }
@@ -402,9 +406,17 @@ export class FileDrops {
 
   _onDragEnd() {
     if (!this._targets.length) return;
-    // the drop data arrives later from the helper; keep what it landed on
+    // the drop data usually arrives later from the helper, possibly after
+    // the next drag began; keep what this drag landed on under its id,
+    // unless _onDrop already took this drag's drop
     this._updateTarget();
-    this._dropTarget = this._target;
+    if (!this._dropDelivered && this._target) {
+      this._dragTargets.set(this._drag, this._target);
+    }
+    // a drag whose drop never came (cancelled, refused) must not pile up
+    for (const id of this._dragTargets.keys()) {
+      if (id < this._drag - 4) this._dragTargets.delete(id);
+    }
     this._send('hide');
     if (this._activeDock) this._leaveDock(this._activeDock);
     this._activeDock = null;
@@ -451,9 +463,20 @@ export class FileDrops {
   // drop actions
   //---------------------
 
-  _onDrop(uris) {
-    const target = this._dropTarget;
-    this._dropTarget = null;
+  _onDrop(uris, drag) {
+    // The helper's drop line and Meta.Dnd's dnd-leave travel unrelated
+    // channels in no fixed order: a drop reported while its drag is still
+    // live lands on what the pointer is over now; a later one on what that
+    // drag ended on, even if another drag has begun since.
+    let target;
+    if (drag === this._drag && this._targets.length) {
+      this._updateTarget();
+      target = this._target;
+      this._dropDelivered = true;
+    } else {
+      target = this._dragTargets.get(drag);
+      this._dragTargets.delete(drag);
+    }
     if (!target || !uris.length) return;
     this._perform(target, uris).catch((e) => {
       console.error(`d2da: file-drops ${target.kind}`, e);
