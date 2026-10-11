@@ -162,6 +162,17 @@ export class FileDrops {
         coordinate: Clutter.BindCoordinate.ALL,
       })
     );
+    // A window actor must not die with the layer while Mutter still manages
+    // its window (Mutter keeps using the freed actor and the shell crashes).
+    // The layer goes on disable, while the helper exits asynchronously, and
+    // with uiGroup at shutdown, which the Shell tears down without disabling
+    // extensions. Destroy handlers run before the children are destroyed.
+    this._layer.connect('destroy', (layer) => {
+      layer.get_children().forEach((actor) => {
+        layer.remove_child(actor);
+        global.window_group.add_child(actor);
+      });
+    });
     Main.layoutManager.uiGroup.add_child(this._layer);
     this._spawn();
   }
@@ -174,12 +185,6 @@ export class FileDrops {
       this._restartId = 0;
     }
     this._kill();
-    // a window actor must not die with the layer while Mutter still
-    // manages its window (the helper exits asynchronously)
-    this._layer?.get_children().forEach((actor) => {
-      this._layer.remove_child(actor);
-      global.window_group.add_child(actor);
-    });
     this._layer?.destroy();
     this._layer = null;
     if (this._activeDock) this._leaveDock(this._activeDock);
