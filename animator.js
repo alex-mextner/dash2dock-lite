@@ -699,6 +699,13 @@ export let Animator = class {
         }
 
         icon._renderer = this._renderers[icon._idx];
+        // Renderers are pooled by position: when an item is removed, the
+        // ones after it take over their neighbour's renderer. St.Icon keeps
+        // showing the old image until the new one has loaded (a frame or more
+        // for file icons, e.g. the glass Trash), so drop it first.
+        if (icon._renderer._icon && icon._renderer._icon !== icon._icon) {
+          icon._renderer.gicon = null;
+        }
         icon._renderer._icon = icon._icon;
         icon._renderer.set_style_class_name('');
 

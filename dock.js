@@ -1339,6 +1339,24 @@ export let Dock = GObject.registerClass(
       this._beginAnimation();
     }
 
+    // Mutter flagged the window (un)minimized and is about to run the effect,
+    // which aims at the window's icon geometry: with tiles on, that is the
+    // window's tile. Lay the tile out now and keep it, empty, while the
+    // effect runs.
+    _onMinimizedChanged(window) {
+      if (!this.extension.minimized_window_tiles) return;
+      if (window.minimized) this.relayout(true);
+      let tile = this._minimizedTiles?.get(window);
+      if (!tile) return;
+      tile.hold();
+      // Allocate the dash now and run the frame the timer would run next: the
+      // tile's slot is its container plus the animator's spacing offset
+      // (windowFeedback._itemRect), both known only after that.
+      tile.item?.get_allocation_box();
+      this.animate();
+      this._beginAnimation();
+    }
+
     _snapToContainerEdge(container, child, edge = true) {
       child.x = container.width / 2 - child.width / 2;
       child.y = container.height / 2 - child.height / 2;

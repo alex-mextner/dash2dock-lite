@@ -389,7 +389,10 @@ export default class Dash2DockLiteExt extends Extension {
     this._addEvents();
     this._updateHotkeysOverlay();
     this.appSpread = new AppSpread();
-    this._windowEvents = new WindowEvents(() => this._onWindowsChanged());
+    this._windowEvents = new WindowEvents(
+      () => this._onWindowsChanged(),
+      (window) => this._onMinimizedChanged(window)
+    );
     this._updateWindowsView();
     this._queryDisplay();
     // this.startUp();
@@ -1105,6 +1108,13 @@ export default class Dash2DockLiteExt extends Extension {
 
   _onWindowsChanged() {
     this.docks?.forEach((dock) => dock._onWindowsChanged());
+  }
+
+  // runs before Mutter starts the minimize/unminimize effect: the docks lay
+  // out the window's tile, then the window is aimed at it
+  _onMinimizedChanged(window) {
+    this.docks?.forEach((dock) => dock._onMinimizedChanged(window));
+    this.windowFeedback?.aimWindow(window);
   }
 
   _onMonitorsChanged() {

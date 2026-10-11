@@ -444,7 +444,7 @@
     <key type="b" name="minimized-window-tiles">
         <default>false</default>
         <summary>Minimized window tiles</summary>
-        <description>Show each minimized window as a live thumbnail before the Trash, as on macOS when &quot;Minimize windows into application icon&quot; is off.</description>
+        <description>Show each minimized window as a live thumbnail before the Trash; windows minimize into their thumbnail and restore out of it, as on macOS when &quot;Minimize windows into application icon&quot; is off.</description>
     </key>
     <key type="b" name="apps-icon">
         <default>true</default>

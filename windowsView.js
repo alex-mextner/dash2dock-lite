@@ -8,7 +8,11 @@
 //   connected only while one of them is on.
 // * MinimizedTile (macOS "Minimize windows into application icon" = off): a
 //   dock item showing a live Clutter.Clone of a minimized window with the app
-//   icon as an emblem, placed between the folder stacks and the Trash.
+//   icon as an emblem, placed between the folder stacks and the Trash. The
+//   window minimizes into its tile and restores out of it: the tile is laid
+//   out as soon as Mutter flags the window minimized, before the minimize
+//   effect starts and reads the window's icon geometry (windowFeedback.js),
+//   and stays, empty, until the unminimize effect is over.
 // * AppSpread ("Show All Windows", macOS App Exposé, Ubuntu Dock appspread):
 //   the Shell overview window picker showing only one app's windows. It reuses
 //   the Shell's own Workspace window clones (GPU), filtered by patching the
@@ -22,6 +26,7 @@ import * as Workspace from 'resource:///org/gnome/shell/ui/workspace.js';
 import * as WorkspaceThumbnail from 'resource:///org/gnome/shell/ui/workspaceThumbnail.js';
 
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
@@ -61,11 +66,15 @@ export function filterDashRunningApps(dash, isIsolated) {
   });
 }
 
-// Window/workspace changes the window views depend on.
+// Window/workspace changes the window views depend on. onMinimizedChanged
+// (Meta.Window) runs synchronously from the window's notify::minimized,
+// which Mutter emits before it starts the minimize/unminimize effect.
 export class WindowEvents {
-  constructor(onChange) {
+  constructor(onChange, onMinimizedChanged) {
     this._onChange = onChange;
+    this._onMinimizedChanged = onMinimizedChanged;
     this._workspace = null;
+    this._windows = new Set();
     this._enabled = false;
   }
 
@@ -89,7 +98,32 @@ export class WindowEvents {
       changed,
       this
     );
+    // ShellWM's minimize comes too late to aim the effect: Main.wm's handler
+    // runs first and reads the icon geometry
+    global.display.connectObject(
+      'window-created',
+      (display, window) => this._watchWindow(window),
+      this
+    );
+    global
+      .get_window_actors()
+      .forEach((actor) => this._watchWindow(actor.meta_window));
     this._watchActiveWorkspace();
+  }
+
+  _watchWindow(window) {
+    if (!window || this._windows.has(window)) return;
+    this._windows.add(window);
+    window.connectObject(
+      'notify::minimized',
+      () => this._onMinimizedChanged?.(window),
+      'unmanaged',
+      () => {
+        window.disconnectObject(this);
+        this._windows.delete(window);
+      },
+      this
+    );
   }
 
   // windows entering/leaving the active workspace (opened, closed, moved)
@@ -111,6 +145,9 @@ export class WindowEvents {
     this._enabled = false;
     global.workspace_manager.disconnectObject(this);
     global.window_manager.disconnectObject(this);
+    global.display.disconnectObject(this);
+    this._windows.forEach((window) => window.disconnectObject(this));
+    this._windows.clear();
     this._workspace?.disconnectObject(this);
     this._workspace = null;
   }
@@ -118,6 +155,7 @@ export class WindowEvents {
   destroy() {
     this.disable();
     this._onChange = null;
+    this._onMinimizedChanged = null;
   }
 }
 
@@ -125,6 +163,9 @@ export class WindowEvents {
 const TILE_PADDING = 0.08;
 // emblem size relative to the tile
 const TILE_EMBLEM = 0.42;
+// longest wait for a minimize/unminimize effect (Shell: 400 ms, genie: 500
+// ms) before a held tile shows or goes regardless
+const TILE_HOLD_MS = 1500;
 
 function minimizedWindows(dock) {
   let isolated = dock.extension.isolate_workspaces;
@@ -145,18 +186,18 @@ function minimizedWindows(dock) {
 
 // Brings the dock's tiles in line with the minimized windows; returns the map
 // (window -> tile) to keep. New tiles go last, next to the Trash, as on macOS.
+// A held tile stays while its window restores out of it.
 export function syncMinimizedTiles(dock, tiles) {
   if (!dock._extraIcons) return null;
-  if (!dock.extension.minimized_window_tiles && !tiles?.size) return tiles;
+  let enabled = dock.extension.minimized_window_tiles;
+  if (!enabled && !tiles?.size) return tiles;
 
   tiles = tiles ?? new Map();
-  let wanted = dock.extension.minimized_window_tiles
-    ? minimizedWindows(dock)
-    : [];
+  let wanted = enabled ? minimizedWindows(dock) : [];
   let changed = false;
 
   tiles.forEach((tile, w) => {
-    if (wanted.includes(w)) return;
+    if (wanted.includes(w) || (enabled && tile.held)) return;
     // out of the map first: destroying an item can re-enter a relayout
     tiles.delete(w);
     tile.destroy();
@@ -242,17 +283,56 @@ class MinimizedTile {
     // dock._cleanupIcon destroys it with the item; the animator moves it on bounce
     this.item._image = this.actor;
     this._size = 0;
+    this.held = false;
+    this._holdId = 0;
 
-    let changed = () => dock._onWindowsChanged?.();
+    this._changed = () => dock._onWindowsChanged?.();
     metaWindow.connectObject(
       'notify::title',
       () => this.item?.setLabelText(title()),
       'notify::minimized',
-      changed,
+      this._changed,
       'unmanaged',
-      changed,
+      () => {
+        this._release();
+        this._changed();
+      },
       this
     );
+  }
+
+  // Keeps the tile, empty, while the window's minimize/unminimize effect
+  // flies the window into or out of its slot (a clone would show the window
+  // twice, and the slot must not close under a restoring window). Mutter
+  // runs no effect for a window that is not on screen: the timeout ends the
+  // wait then.
+  hold() {
+    this._release();
+    let actor = this.window.get_compositor_private();
+    if (!actor) return;
+    this.held = true;
+    let done = () => {
+      this._release();
+      this._changed();
+    };
+    actor.connectObject('effects-completed', done, this);
+    this._holdId = GLib.timeout_add(
+      GLib.PRIORITY_DEFAULT,
+      TILE_HOLD_MS,
+      () => {
+        this._holdId = 0;
+        done();
+        return GLib.SOURCE_REMOVE;
+      }
+    );
+  }
+
+  _release() {
+    if (!this.held) return;
+    this.held = false;
+    this.window.get_compositor_private()?.disconnectObject(this);
+    if (this._holdId) GLib.source_remove(this._holdId);
+    this._holdId = 0;
   }
 
   // Fit the window's frame (not its shadow margins) into a size x size tile.
@@ -290,11 +370,12 @@ class MinimizedTile {
     this.actor.set_position(renderer.x, renderer.y);
     this.actor.set_scale(renderer.scale_x, renderer.scale_y);
     this.actor.opacity = renderer.opacity;
-    this.actor.visible = renderer.visible;
+    this.actor.visible = renderer.visible && !this.held;
     renderer.opacity = 0;
   }
 
   destroy() {
+    this._release();
     this.window.disconnectObject(this);
     let { item, actor } = this;
     this.item = null;

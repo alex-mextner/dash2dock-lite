@@ -4,7 +4,9 @@
 // how the dock shows in window animations.
 //
 // * minimize-to-icon: every app window gets its dock icon's on-screen rect as
-//   its Meta icon geometry. Shell's minimize/unminimize animation and the
+//   its Meta icon geometry; with minimized-window-tiles, a minimized window
+//   gets its tile's rect instead (aimed by aimWindow as the window minimizes,
+//   before the effect starts). Shell's minimize/unminimize animation and the
 //   Magic Lamp extension aim at that rect; without it they shrink the window
 //   into the monitor's top-left corner. The rect is refreshed when the dock
 //   settles after a change (Dock._endAnimation), never per frame.
@@ -14,8 +16,8 @@
 //   or is urgent, or its LauncherEntry is urgent via onAppAttention) and is
 //   not focused, its icon keeps bouncing and an autohidden dock stays shown,
 //   as on macOS. Focusing the app or the request ending stops it.
-// * minimize-effect: 1 = our GPU genie (effects/genie.js) into the same icon
-//   rect; left to the Magic Lamp extension whenever that one is active.
+// * minimize-effect: 1 = our GPU genie (effects/genie.js) into the same rect
+//   (iconTarget); left to the Magic Lamp extension whenever that one is active.
 
 import GLib from 'gi://GLib';
 import Mtk from 'gi://Mtk';
@@ -320,43 +322,56 @@ export class WindowFeedback {
     }
   }
 
-  // The on-screen rect (stage px) of the app's icon at rest and the dock
-  // side, or null when no dock shows the app. Prefers the dock on the
-  // window's monitor, as each monitor's dock is the one the user sees.
-  iconTarget(window, app = null) {
-    app ??= this._tracker?.get_window_app(window);
-    if (!app) return null;
+  // The on-screen rect (stage px) the window minimizes into, at rest, and the
+  // dock side: its minimized-window tile when it has one, else its app's
+  // icon; null when no dock shows either. Prefers the dock on the window's
+  // monitor, as each monitor's dock is the one the user sees.
+  iconTarget(window) {
     let docks = this._extension.docks ?? [];
     let monitor = window.get_monitor();
     let preferred = docks.find((d) => d._monitorIndex === monitor);
-    let target = preferred ? this._iconRect(preferred, app) : null;
-    for (let i = 0; !target && i < docks.length; i++) {
-      if (docks[i] !== preferred) target = this._iconRect(docks[i], app);
+    if (preferred) {
+      docks = [preferred, ...docks.filter((d) => d !== preferred)];
     }
-    return target;
+    for (let dock of docks) {
+      let tile = dock._minimizedTiles?.get(window)?.item;
+      let target = tile ? this._itemRect(dock, tile) : null;
+      if (target) return target;
+    }
+    let app = this._tracker?.get_window_app(window);
+    if (!app) return null;
+    for (let dock of docks) {
+      let container = dock._icons?.find((c) => c._appwell?.app === app);
+      let target = container ? this._itemRect(dock, container) : null;
+      if (target) return target;
+    }
+    return null;
   }
 
-  _iconRect(dock, app) {
-    let icons = dock._icons;
-    if (!icons || !dock.dash) return null;
-    let container = icons.find((c) => c._appwell?.app === app);
-    if (!container) return null;
+  _itemRect(dock, container) {
+    if (!dock.dash) return null;
 
     let [x, y] = container.get_transformed_position();
     if (isNaN(x) || isNaN(y)) return null;
 
     // the icon at rest: unmagnified, centred in its dash slot, shifted along
-    // the dock by the animator's spacing offset (_icon.translation, as the
-    // renderer is placed in animator.js)
+    // the dock by the animator's spacing offset: where it is heading
+    // (_translate, eased into _icon.translation as the renderer is placed in
+    // animator.js), so a just-added tile is aimed at its final slot
     let size = (dock._iconSizeScaledDown || 0) * (dock._scaleFactor || 1);
     if (!size) return null;
     x += (container.width - size) / 2;
     y += (container.height - size) / 2;
     let vertical = dock.isVertical();
+    let offset =
+      container._translate ??
+      (vertical
+        ? container._icon?.translationY
+        : container._icon?.translationX);
     if (vertical) {
-      y += container._icon?.translationY || 0;
+      y += offset || 0;
     } else {
-      x += container._icon?.translationX || 0;
+      x += offset || 0;
     }
 
     // The dash slides off-screen while autohidden. Aim at where the icon is
@@ -382,29 +397,46 @@ export class WindowFeedback {
     };
   }
 
+  // The window is about to minimize or restore and the docks have just laid
+  // out its tile: aim the effect there now, not when the dock settles.
+  aimWindow(window) {
+    if (!this._extension.minimize_to_icon || !this._tracker) return;
+    if (!window.is_skip_taskbar()) this._aim(window);
+  }
+
+  // true when the window got a target
+  _aim(window) {
+    let target = this.iconTarget(window);
+    if (target) {
+      window.set_icon_geometry(
+        new Mtk.Rectangle({
+          x: target.x,
+          y: target.y,
+          width: target.width,
+          height: target.height,
+        })
+      );
+      this._geometryWindows.add(window);
+      return true;
+    }
+    if (this._geometryWindows.delete(window)) {
+      // its icon left the dock: drop the stale target
+      window.set_icon_geometry(null);
+    }
+    return false;
+  }
+
   _updateIconGeometry() {
     if (!this._tracker) return;
-    let seen = new Set();
+    let aimed = new Set();
     for (let actor of global.get_window_actors()) {
       let window = actor.meta_window;
-      if (!window || window.is_skip_taskbar()) continue;
-      let target = this.iconTarget(window);
-      if (target) {
-        window.set_icon_geometry(
-          new Mtk.Rectangle({
-            x: target.x,
-            y: target.y,
-            width: target.width,
-            height: target.height,
-          })
-        );
-        seen.add(window);
-      } else if (this._geometryWindows.has(window)) {
-        // its icon left the dock: drop the stale target
-        window.set_icon_geometry(null);
+      if (window && !window.is_skip_taskbar() && this._aim(window)) {
+        aimed.add(window);
       }
     }
-    this._geometryWindows = seen;
+    // also forgets windows unmanaged since
+    this._geometryWindows = aimed;
   }
 
   _clearIconGeometry() {
