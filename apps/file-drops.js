@@ -15,9 +15,13 @@
 //           "target 0|1"  whether the pointer is over a dock item that takes
 //                         files; decides the drag cursor and whether a drop
 //                         is accepted
-//   stdout  {"drop":{"uris":[...],"drag":<drag>}}  the drag id is the one
+//   stdout  {"ready":true}  once commands are read; the Shell sends no "show"
+//           before it
+//           {"drop":{"uris":[...],"drag":<drag>}}  the drag id is the one
 //           shown when the drop entered, so the Shell can route a drop read
 //           after the next drag began
+//           {"leave":<drag>}  the drag left a drop window without dropping
+//           (moved off the dock, or ended or was cancelled over it)
 // EOF on stdin ends the process, so it never outlives the extension.
 
 import Gdk from 'gi://Gdk?version=4.0';
@@ -189,6 +193,7 @@ function createWindow() {
   target.connect('drag-motion', (_t, drop) => status(drop));
   target.connect('drag-leave', (_t, drop) => {
     if (currentDrop === drop) currentDrop = null;
+    send({leave: dragOf.get(drop) ?? currentDrag});
   });
   target.connect('drop', (_t, drop) => {
     currentDrop = null;
@@ -260,4 +265,5 @@ function readCommand() {
   });
 }
 readCommand();
+send({ready: true});
 loop.run();

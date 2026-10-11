@@ -11,7 +11,8 @@
 // is; it paints nothing, so the dock looks unchanged. Hover feedback stays
 // the dock's own: Meta.Dnd positions drive the usual magnification and
 // label. Outside drags the helper has no window mapped, so it can never
-// steal a click or block direct scanout.
+// steal a click or block direct scanout; the layer is hidden then as well,
+// so a window the helper maps late or unmaps slowly stays out of input.
 
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
@@ -27,6 +28,18 @@ const HOVER_MARGIN = 20;
 const CRASH_WINDOW_US = 30 * GLib.USEC_PER_SEC;
 const MAX_CRASHES = 5;
 const RESTART_BASE_MS = 1000;
+// Every drag end must take the drop window away, even when Meta.Dnd's leave
+// never comes. A pointer drag ends with the release of its button: once the
+// button is seen up on two ticks, Mutter has long delivered the drop. A
+// touch drag holds no button and may rest on its target before the drop,
+// so only Meta.Dnd's leave or its drop ends it.
+const WATCH_MS = 250;
+const BUTTONS =
+  Clutter.ModifierType.BUTTON1_MASK |
+  Clutter.ModifierType.BUTTON2_MASK |
+  Clutter.ModifierType.BUTTON3_MASK |
+  Clutter.ModifierType.BUTTON4_MASK |
+  Clutter.ModifierType.BUTTON5_MASK;
 
 const NAUTILUS_BUS = 'org.gnome.Nautilus';
 const NAUTILUS_PATH = '/org/gnome/Nautilus/FileOperations2';
@@ -130,6 +143,10 @@ export class FileDrops {
     this._dragTargets = new Map(); // drag id -> target it ended on
     this._dropDelivered = false;
     this._layer = null;
+    this._ready = false; // the helper reads commands
+    this._dragActive = false; // drop windows are up for drag this._drag
+    this._pointerDrag = false; // its button was held when it began
+    this._watchId = 0;
   }
 
   enable() {
@@ -148,6 +165,8 @@ export class FileDrops {
       () => this._onDragEnd(),
       this
     );
+    // the same end as dnd-leave in current Shells; whichever comes first
+    Main.xdndHandler.connectObject('drag-end', () => this._onDragEnd(), this);
     global.display.connectObject(
       'window-created',
       (_d, w) => this._onWindowCreated(w),
@@ -155,7 +174,10 @@ export class FileDrops {
     );
     // the dock re-creates reactive icon actors while it magnifies, so the
     // drop surface goes above the docks rather than the docks stepping aside
-    this._layer = new Clutter.Actor({ name: 'd2daFileDropLayer' });
+    this._layer = new Clutter.Actor({
+      name: 'd2daFileDropLayer',
+      visible: false,
+    });
     this._layer.add_constraint(
       new Clutter.BindConstraint({
         source: global.stage,
@@ -168,6 +190,9 @@ export class FileDrops {
     // with uiGroup at shutdown, which the Shell tears down without disabling
     // extensions. Destroy handlers run before the children are destroyed.
     this._layer.connect('destroy', (layer) => {
+      // nor may a drag the Shell exits in end on it later
+      this._unwatchDrag();
+      this._dragActive = false;
       layer.get_children().forEach((actor) => {
         layer.remove_child(actor);
         global.window_group.add_child(actor);
@@ -179,18 +204,16 @@ export class FileDrops {
 
   disable() {
     global.backend.get_dnd().disconnectObject(this);
+    Main.xdndHandler.disconnectObject(this);
     global.display.disconnectObject(this);
     if (this._restartId) {
       GLib.source_remove(this._restartId);
       this._restartId = 0;
     }
+    this._onDragEnd();
     this._kill();
     this._layer?.destroy();
     this._layer = null;
-    if (this._activeDock) this._leaveDock(this._activeDock);
-    this._activeDock = null;
-    this._target = null;
-    this._hoverItem = null;
     this._dragTargets.clear();
     this._dropDelivered = false;
   }
@@ -242,6 +265,7 @@ export class FileDrops {
     this._stdin = null;
     this._proc = null;
     this._client = null;
+    this._ready = false;
     this._windows.forEach((w) => w.disconnectObject(this));
     this._windows = [];
     this._targets = [];
@@ -252,7 +276,7 @@ export class FileDrops {
       GLib.get_monotonic_time() - this._startedAt < CRASH_WINDOW_US;
     this._crashes = quick ? this._crashes + 1 : 1;
     this._kill();
-    this._activeDock = null;
+    this._onDragEnd();
     if (this._crashes > MAX_CRASHES) {
       console.error('d2da: file-drops helper keeps exiting; giving up');
       return;
@@ -286,7 +310,9 @@ export class FileDrops {
       if (line === null) return; // helper exited; wait_async restarts it
       try {
         const msg = JSON.parse(line);
+        if (msg.ready) this._onHelperReady();
         if (msg.drop) this._onDrop(msg.drop.uris ?? [], msg.drop.drag);
+        if (msg.leave !== undefined) this._onHelperLeave(msg.leave);
       } catch (e) {
         console.error('d2da: file-drops helper message', e);
       }
@@ -326,6 +352,8 @@ export class FileDrops {
   }
 
   _onDragBegin() {
+    // a drag that began without the last one's leave
+    this._onDragEnd();
     if (!this._proc) return;
     this._drag++;
     this._dropDelivered = false;
@@ -336,10 +364,25 @@ export class FileDrops {
       .filter((d) => d.visible && d.dash && !d.getMonitor()?.inFullscreen)
       .map((dock) => ({ dock, rect: this._dropRect(dock), window: null }));
     if (!this._targets.length) return;
-    this._send('target 0');
-    this._send(`show ${this._targets.length} ${this._drag}`);
+    this._dragActive = true;
+    this._pointerDrag = this._buttonHeld();
+    this._watchDrag();
     // above whatever chrome was added since
     Main.layoutManager.uiGroup.set_child_above_sibling(this._layer, null);
+    this._layer.show();
+    // a helper still starting up gets them once it reports ready, and none
+    // if the drag is over by then
+    if (this._ready) this._showDropWindows();
+  }
+
+  _showDropWindows() {
+    this._send(`target ${this._target ? 1 : 0}`);
+    this._send(`show ${this._targets.length} ${this._drag}`);
+  }
+
+  _onHelperReady() {
+    this._ready = true;
+    if (this._dragActive) this._showDropWindows();
   }
 
   _onWindowCreated(window) {
@@ -383,6 +426,7 @@ export class FileDrops {
   // animator found under the pointer, and only builds a target and messages
   // the helper when that item changes.
   _onDragMotion(x, y) {
+    if (!this._dragActive) return;
     let dock = null;
     for (let i = 0; i < this._targets.length; i++) {
       const r = this._targets[i].rect;
@@ -409,8 +453,20 @@ export class FileDrops {
     dock.autohider?.holdForDrag(this, false);
   }
 
+  // the drag left a drop window: off the dock it goes on, but a pointer drag
+  // whose button is up was cancelled or ended over the dock
+  _onHelperLeave(drag) {
+    if (drag === this._drag && this._pointerDrag && !this._buttonHeld()) {
+      this._onDragEnd();
+    }
+  }
+
   _onDragEnd() {
-    if (!this._targets.length) return;
+    if (!this._dragActive) return;
+    this._dragActive = false;
+    this._unwatchDrag();
+    // input goes back to the dock now, however late the helper unmaps
+    this._layer.hide();
     // the drop data usually arrives later from the helper, possibly after
     // the next drag began; keep what this drag landed on under its id,
     // unless _onDrop already took this drag's drop
@@ -428,6 +484,32 @@ export class FileDrops {
     this._targets = [];
     this._target = null;
     this._hoverItem = null;
+  }
+
+  _buttonHeld() {
+    const [, , mods] = global.get_pointer();
+    return (mods & BUTTONS) !== 0;
+  }
+
+  // A timer, and only while a pointer drag is live. Not a Clutter event
+  // filter for the release: a Shell that exits mid-drag runs it during its
+  // teardown, which aborted the Shell in testing.
+  _watchDrag() {
+    this._unwatchDrag();
+    if (!this._pointerDrag) return;
+    let upTicks = 0;
+    this._watchId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, WATCH_MS, () => {
+      upTicks = this._buttonHeld() ? 0 : upTicks + 1;
+      if (upTicks < 2) return GLib.SOURCE_CONTINUE;
+      this._watchId = 0;
+      this._onDragEnd();
+      return GLib.SOURCE_REMOVE;
+    });
+  }
+
+  _unwatchDrag() {
+    if (this._watchId) GLib.source_remove(this._watchId);
+    this._watchId = 0;
   }
 
   _updateTarget() {
@@ -474,10 +556,12 @@ export class FileDrops {
     // live lands on what the pointer is over now; a later one on what that
     // drag ended on, even if another drag has begun since.
     let target;
-    if (drag === this._drag && this._targets.length) {
+    if (drag === this._drag && this._dragActive) {
       this._updateTarget();
       target = this._target;
       this._dropDelivered = true;
+      // a drop ends the drag, whenever dnd-leave follows
+      this._onDragEnd();
     } else {
       target = this._dragTargets.get(drag);
       this._dragTargets.delete(drag);
